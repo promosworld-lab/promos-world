@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function Avis() {
+function AvisContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const reservationId = searchParams.get('reservation')
@@ -78,16 +78,13 @@ export default function Avis() {
           <div style={{ fontSize: '60px', marginBottom: '16px' }}>
             {dejaNote && message !== 'success' ? '✅' : '⭐'}
           </div>
-          <div style={{
-            fontSize: '20px', fontWeight: '800',
-            color: 'white', marginBottom: '8px'
-          }}>
+          <div style={{ fontSize: '20px', fontWeight: '800', color: 'white', marginBottom: '8px' }}>
             {dejaNote && message !== 'success' ? 'Avis déjà soumis' : 'Merci pour ton avis !'}
           </div>
           <div style={{ fontSize: '13px', color: '#888', marginBottom: '24px' }}>
             {dejaNote && message !== 'success'
               ? 'Tu as déjà noté ce vendeur pour cette transaction.'
-              : 'Ton avis aide la communauté Promo\'s World.'}
+              : "Ton avis aide la communauté Promo's World."}
           </div>
           <button
             onClick={() => router.push('/')}
@@ -117,8 +114,6 @@ export default function Avis() {
         background: '#1A1A1A', borderRadius: '20px',
         padding: '32px', border: '1px solid #2A2A2A'
       }}>
-
-        {/* LOGO */}
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{ fontSize: '22px', fontWeight: '800', color: '#FF5C00' }}>
             Promo's<span style={{ color: 'white' }}>World</span>
@@ -135,11 +130,7 @@ export default function Avis() {
           </div>
         </div>
 
-        {/* ETOILES */}
-        <div style={{
-          display: 'flex', justifyContent: 'center',
-          gap: '8px', marginBottom: '24px'
-        }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' }}>
           {[1, 2, 3, 4, 5].map(s => (
             <div
               key={s}
@@ -158,23 +149,17 @@ export default function Avis() {
           ))}
         </div>
 
-        {/* LABEL NOTE */}
         {(hover || note) > 0 && (
           <div style={{
             textAlign: 'center', marginBottom: '20px',
-            fontSize: '13px', fontWeight: '600',
-            color: '#FF5C00'
+            fontSize: '13px', fontWeight: '600', color: '#FF5C00'
           }}>
             {['', 'Très mauvais 😞', 'Mauvais 😕', 'Correct 😐', 'Bien 😊', 'Excellent ! 🔥'][hover || note]}
           </div>
         )}
 
-        {/* COMMENTAIRE */}
         <div style={{ marginBottom: '20px' }}>
-          <label style={{
-            fontSize: '12px', color: '#888',
-            display: 'block', marginBottom: '8px'
-          }}>
+          <label style={{ fontSize: '12px', color: '#888', display: 'block', marginBottom: '8px' }}>
             Commentaire (optionnel)
           </label>
           <textarea
@@ -193,7 +178,6 @@ export default function Avis() {
           />
         </div>
 
-        {/* MESSAGE ERREUR */}
         {message && message !== 'success' && (
           <div style={{
             padding: '10px 14px', borderRadius: '10px',
@@ -206,7 +190,6 @@ export default function Avis() {
           </div>
         )}
 
-        {/* BOUTON */}
         <button
           onClick={handleSubmit}
           disabled={loading}
@@ -235,5 +218,22 @@ export default function Avis() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function Avis() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh', background: '#0A0A0A',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'center', color: '#888',
+        fontFamily: 'sans-serif'
+      }}>
+        Chargement...
+      </div>
+    }>
+      <AvisContent />
+    </Suspense>
   )
 }
