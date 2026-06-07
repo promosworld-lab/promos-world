@@ -10,6 +10,8 @@ export default function Home() {
   const [promotions, setPromotions] = useState([])
   const [categorie, setCategorie] = useState('Tout')
   const [recherche, setRecherche] = useState('')
+  const [pays, setPays] = useState('')
+  const [ville, setVille] = useState('')
   const [loading, setLoading] = useState(true)
 
   const categories = ['Tout', '👗 Mode', '📱 Tech', '🍔 Food', '🏠 Maison', '💄 Beauté', '👟 Chaussures']
@@ -44,14 +46,16 @@ export default function Home() {
   const promotionsFiltrees = promotions.filter(p => {
     const matchCategorie = categorie === 'Tout' || p.categorie === categorie
     const matchRecherche = p.titre.toLowerCase().includes(recherche.toLowerCase())
-    return matchCategorie && matchRecherche
+    const matchPays = pays === '' || (p.pays && p.pays.toLowerCase().includes(pays.toLowerCase()))
+    const matchVille = ville === '' || (p.ville && p.ville.toLowerCase().includes(ville.toLowerCase()))
+    return matchCategorie && matchRecherche && matchPays && matchVille
   })
 
   const reduction = (original, promo) => Math.round((1 - promo / original) * 100)
 
   return (
     <div style={{ minHeight: '100vh', background: '#0A0A0A', color: 'white', fontFamily: 'sans-serif' }}>
-      
+
       {/* NAVBAR */}
       <div style={{
         position: 'fixed', top: 0, left: 0, right: 0,
@@ -103,23 +107,16 @@ export default function Home() {
         </div>
       </div>
 
-      {/* CONTENU */}
       <div style={{ paddingTop: '70px' }}>
 
         {/* HERO */}
-        <div style={{
-          padding: '40px 20px 20px',
-          textAlign: 'center'
-        }}>
+        <div style={{ padding: '40px 20px 20px', textAlign: 'center' }}>
           <div style={{
             display: 'inline-block',
             background: 'rgba(255,92,0,0.1)',
             border: '1px solid rgba(255,92,0,0.3)',
-            borderRadius: '20px',
-            padding: '4px 14px',
-            fontSize: '12px',
-            color: '#FF5C00',
-            marginBottom: '16px'
+            borderRadius: '20px', padding: '4px 14px',
+            fontSize: '12px', color: '#FF5C00', marginBottom: '16px'
           }}>
             🔥 Les meilleures promos près de chez toi
           </div>
@@ -142,7 +139,7 @@ export default function Home() {
             alignItems: 'center', gap: '10px',
             border: '1px solid #2A2A2A'
           }}>
-            <span style={{ fontSize: '16px' }}>🔍</span>
+            <span>🔍</span>
             <input
               type="text"
               placeholder="Chercher une promo..."
@@ -157,10 +154,42 @@ export default function Home() {
           </div>
         </div>
 
+        {/* FILTRES LOCALISATION */}
+        <div style={{
+          display: 'flex', gap: '10px',
+          padding: '0 20px 16px',
+          maxWidth: '500px', margin: '0 auto'
+        }}>
+          <input
+            type="text"
+            placeholder="🌍 Pays"
+            value={pays}
+            onChange={e => setPays(e.target.value)}
+            style={{
+              flex: 1, padding: '10px 14px',
+              background: '#1A1A1A', border: '1px solid #2A2A2A',
+              borderRadius: '10px', color: 'white',
+              fontSize: '13px', outline: 'none'
+            }}
+          />
+          <input
+            type="text"
+            placeholder="📍 Ville"
+            value={ville}
+            onChange={e => setVille(e.target.value)}
+            style={{
+              flex: 1, padding: '10px 14px',
+              background: '#1A1A1A', border: '1px solid #2A2A2A',
+              borderRadius: '10px', color: 'white',
+              fontSize: '13px', outline: 'none'
+            }}
+          />
+        </div>
+
         {/* CATEGORIES */}
         <div style={{
           display: 'flex', gap: '8px',
-          padding: '16px 20px', overflowX: 'auto',
+          padding: '0 20px 20px', overflowX: 'auto',
           scrollbarWidth: 'none'
         }}>
           {categories.map(cat => (
@@ -169,7 +198,7 @@ export default function Home() {
               onClick={() => setCategorie(cat)}
               style={{
                 flexShrink: 0, padding: '8px 16px',
-                borderRadius: '20px', border: 'none',
+                borderRadius: '20px',
                 background: categorie === cat ? '#FF5C00' : '#1A1A1A',
                 color: categorie === cat ? 'white' : '#888',
                 fontSize: '13px', fontWeight: '500',
@@ -184,11 +213,20 @@ export default function Home() {
 
         {/* GRILLE DE PROMOS */}
         <div style={{ padding: '0 20px 40px' }}>
-          <div style={{
-            fontSize: '16px', fontWeight: '700',
-            marginBottom: '16px'
-          }}>
+          <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '16px' }}>
             🔥 Promos du moment
+            {(pays || ville || recherche || categorie !== 'Tout') && (
+              <span
+                onClick={() => { setPays(''); setVille(''); setRecherche(''); setCategorie('Tout') }}
+                style={{
+                  fontSize: '12px', color: '#FF5C00',
+                  marginLeft: '12px', cursor: 'pointer',
+                  fontWeight: '400'
+                }}
+              >
+                Réinitialiser les filtres ✕
+              </span>
+            )}
           </div>
 
           {loading ? (
@@ -197,15 +235,14 @@ export default function Home() {
             </div>
           ) : promotionsFiltrees.length === 0 ? (
             <div style={{
-              textAlign: 'center', color: '#888',
-              padding: '60px 20px'
+              textAlign: 'center', color: '#888', padding: '60px 20px'
             }}>
               <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏷️</div>
               <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>
                 Aucune promo disponible
               </div>
               <div style={{ fontSize: '13px' }}>
-                Reviens bientôt ou change de catégorie
+                Reviens bientôt ou change de filtre
               </div>
             </div>
           ) : (
@@ -226,14 +263,30 @@ export default function Home() {
                   onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'}
                   onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
                 >
-                  {/* Image placeholder */}
+                  {/* IMAGE / VIDEO */}
                   <div style={{
-                    height: '160px', background: '#252525',
+                    height: '180px', background: '#252525',
                     display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: '48px',
-                    position: 'relative', borderBottom: '1px solid #2A2A2A'
+                    justifyContent: 'center', position: 'relative',
+                    overflow: 'hidden', borderBottom: '1px solid #2A2A2A'
                   }}>
-                    🏷️
+                    {promo.photo_url ? (
+                      promo.photo_url.includes('.mp4') ? (
+                        <video
+                          src={promo.photo_url}
+                          muted autoPlay loop
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <img
+                          src={promo.photo_url}
+                          alt={promo.titre}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      )
+                    ) : (
+                      <span style={{ fontSize: '48px' }}>🏷️</span>
+                    )}
                     <div style={{
                       position: 'absolute', top: '10px', left: '10px',
                       background: '#FF5C00', color: 'white',
@@ -244,7 +297,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Infos */}
+                  {/* INFOS */}
                   <div style={{ padding: '14px' }}>
                     <div style={{
                       fontSize: '14px', fontWeight: '600',
@@ -254,20 +307,20 @@ export default function Home() {
                       {promo.titre}
                     </div>
                     <div style={{
-                      fontSize: '12px', color: '#888', marginBottom: '10px'
+                      fontSize: '12px', color: '#888', marginBottom: '4px'
                     }}>
                       {promo.profiles?.nom}
                     </div>
+                    {(promo.ville || promo.pays) && (
+                      <div style={{ fontSize: '11px', color: '#555', marginBottom: '8px' }}>
+                        📍 {[promo.ville, promo.pays].filter(Boolean).join(', ')}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{
-                        fontSize: '16px', fontWeight: '700', color: '#FF5C00'
-                      }}>
+                      <span style={{ fontSize: '16px', fontWeight: '700', color: '#FF5C00' }}>
                         {promo.prix_promo.toLocaleString()} FCFA
                       </span>
-                      <span style={{
-                        fontSize: '12px', color: '#555',
-                        textDecoration: 'line-through'
-                      }}>
+                      <span style={{ fontSize: '12px', color: '#555', textDecoration: 'line-through' }}>
                         {promo.prix_original.toLocaleString()} FCFA
                       </span>
                     </div>
