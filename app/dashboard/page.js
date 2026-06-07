@@ -18,8 +18,13 @@ export default function Dashboard() {
     prix_original: '',
     prix_promo: '',
     stock: 1,
-    date_expiration: ''
+    date_expiration: '',
+    pays: '',
+    ville: ''
   })
+  const [photo, setPhoto] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState(null)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [message, setMessage] = useState('')
 
   const categories = ['👗 Mode', '📱 Tech', '🍔 Food', '🏠 Maison', '💄 Beauté', '👟 Chaussures']
@@ -30,10 +35,7 @@ export default function Dashboard() {
 
   const checkUser = async () => {
     const { data } = await supabase.auth.getUser()
-    if (!data.user) {
-      router.push('/auth')
-      return
-    }
+    if (!data.user) { router.push('/auth'); return }
     setUser(data.user)
 
     const { data: profileData } = await supabase
@@ -42,11 +44,7 @@ export default function Dashboard() {
       .eq('id', data.user.id)
       .single()
 
-    console.log('Profile data:', profileData)
-    if (profileData?.role !== 'vendeur') {
-        router.push('/')
-        return
-      }
+    if (profileData?.role !== 'vendeur') { router.push('/'); return }
 
     setProfile(profileData)
     fetchPromotions(data.user.id)
@@ -64,6 +62,13 @@ export default function Dashboard() {
     setLoading(false)
   }
 
+  const handleMedia = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setPhoto(file)
+    setPhotoPreview(URL.createObjectURL(file))
+  }
+
   const handlePublier = async () => {
     if (!formData.titre || !formData.prix_original || !formData.prix_promo) {
       setMessage('Remplis tous les champs obligatoires.')
@@ -75,6 +80,32 @@ export default function Dashboard() {
       return
     }
 
+    setUploadingPhoto(true)
+    let photo_url = null
+
+    if (photo) {
+      const fileExt = photo.name.split('.').pop()
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('promos')
+        .upload(fileName, photo)
+
+      if (uploadError) {
+        setMessage('Erreur lors du téléchargement du fichier.')
+        setUploadingPhoto(false)
+        return
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('promos')
+        .getPublicUrl(fileName)
+
+      photo_url = urlData.publicUrl
+    }
+
+    setUploadingPhoto(false)
+
     const { error } = await supabase.from('promotions').insert({
       vendeur_id: user.id,
       titre: formData.titre,
@@ -84,7 +115,10 @@ export default function Dashboard() {
       prix_promo: Number(formData.prix_promo),
       stock: Number(formData.stock),
       date_expiration: formData.date_expiration || null,
-      statut: 'en_attente'
+      statut: 'en_attente',
+      photo_url,
+      pays: formData.pays,
+      ville: formData.ville,
     })
 
     if (error) {
@@ -92,12 +126,15 @@ export default function Dashboard() {
       return
     }
 
-    setMessage('Promo soumise ! En attente de validation par l\'admin.')
+    setMessage("Promo soumise ! En attente de validation par l'admin.")
     setShowForm(false)
     setFormData({
       titre: '', description: '', categorie: '👗 Mode',
-      prix_original: '', prix_promo: '', stock: 1, date_expiration: ''
+      prix_original: '', prix_promo: '', stock: 1,
+      date_expiration: '', pays: '', ville: ''
     })
+    setPhoto(null)
+    setPhotoPreview(null)
     fetchPromotions(user.id)
   }
 
@@ -148,9 +185,7 @@ export default function Dashboard() {
           Promo's<span style={{ color: 'white' }}>World</span>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <span style={{ fontSize: '13px', color: '#888' }}>
-            🏪 {profile?.nom}
-          </span>
+          <span style={{ fontSize: '13px', color: '#888' }}>🏪 {profile?.nom}</span>
           <button
             onClick={async () => { await supabase.auth.signOut(); router.push('/auth') }}
             style={{
@@ -164,7 +199,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ paddingTop: '80px', padding: '80px 20px 40px', maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ padding: '80px 20px 40px', maxWidth: '900px', margin: '0 auto' }}>
 
         {/* HEADER */}
         <div style={{ marginBottom: '28px' }}>
@@ -235,6 +270,7 @@ export default function Dashboard() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Titre de la promo *</label>
                 <input
@@ -253,6 +289,66 @@ export default function Dashboard() {
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                 />
+              </div>
+
+              {/* PHOTO / VIDEO */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>Photo ou vidéo de l'article</label>
+                <div
+                  onClick={() => document.getElementById('fileInput').click()}
+                  style={{
+                    border: '2px dashed #333', borderRadius: '12px',
+                    padding: '20px', textAlign: 'center',
+                    cursor: 'pointer', background: '#111',
+                    transition: 'border-color 0.2s'
+                  }}
+                >
+                  {photoPreview ? (
+                    photo?.type.startsWith('video') ? (
+                      <video
+                        src={photoPreview}
+                        controls
+                        style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px' }}
+                      />
+                    ) : (
+                      <img
+                        src={photoPreview}
+                        alt="preview"
+                        style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', objectFit: 'cover' }}
+                      />
+                    )
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>📸</div>
+                      <div style={{ fontSize: '13px', color: '#888' }}>
+                        Clique pour ajouter une photo ou vidéo
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
+                        JPG, PNG, WEBP, MP4 — max 50MB
+                      </div>
+                    </>
+                  )}
+                </div>
+                <input
+                  id="fileInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/mp4"
+                  style={{ display: 'none' }}
+                  onChange={handleMedia}
+                />
+                {photoPreview && (
+                  <button
+                    onClick={() => { setPhoto(null); setPhotoPreview(null) }}
+                    style={{
+                      marginTop: '8px', padding: '6px 12px',
+                      background: 'transparent', border: '1px solid #333',
+                      borderRadius: '8px', color: '#888',
+                      fontSize: '12px', cursor: 'pointer'
+                    }}
+                  >
+                    ✕ Supprimer
+                  </button>
+                )}
               </div>
 
               <div>
@@ -298,7 +394,7 @@ export default function Dashboard() {
                 />
               </div>
 
-              {formData.prix_original && formData.prix_promo && (
+              {formData.prix_original && formData.prix_promo && Number(formData.prix_promo) < Number(formData.prix_original) && (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <div style={{
                     background: 'rgba(255,92,0,0.1)', border: '1px solid rgba(255,92,0,0.2)',
@@ -310,6 +406,26 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
+
+              <div>
+                <label style={labelStyle}>Pays</label>
+                <input
+                  style={inputStyle}
+                  placeholder="Ex: Bénin"
+                  value={formData.pays}
+                  onChange={e => setFormData({ ...formData, pays: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Ville</label>
+                <input
+                  style={inputStyle}
+                  placeholder="Ex: Cotonou"
+                  value={formData.ville}
+                  onChange={e => setFormData({ ...formData, ville: e.target.value })}
+                />
+              </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Date d'expiration (optionnel)</label>
@@ -324,15 +440,17 @@ export default function Dashboard() {
 
             <button
               onClick={handlePublier}
+              disabled={uploadingPhoto}
               style={{
                 width: '100%', padding: '14px',
-                background: '#FF5C00', border: 'none',
-                borderRadius: '12px', color: 'white',
-                fontWeight: '700', fontSize: '14px',
-                cursor: 'pointer', marginTop: '20px'
+                background: uploadingPhoto ? '#333' : '#FF5C00',
+                border: 'none', borderRadius: '12px',
+                color: 'white', fontWeight: '700',
+                fontSize: '14px', cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                marginTop: '20px'
               }}
             >
-              Soumettre pour validation
+              {uploadingPhoto ? '⏳ Upload en cours...' : 'Soumettre pour validation'}
             </button>
           </div>
         )}
@@ -357,38 +475,66 @@ export default function Dashboard() {
             {promotions.map(promo => (
               <div key={promo.id} style={{
                 background: '#1A1A1A', borderRadius: '14px',
-                padding: '16px', border: '1px solid #2A2A2A',
-                display: 'flex', alignItems: 'center', gap: '14px'
+                border: '1px solid #2A2A2A', overflow: 'hidden'
               }}>
                 <div style={{
-                  width: '48px', height: '48px', background: '#252525',
-                  borderRadius: '12px', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  fontSize: '22px', flexShrink: 0
+                  display: 'flex', alignItems: 'center',
+                  gap: '14px', padding: '16px'
                 }}>
-                  🏷️
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                    {promo.titre}
+                  {/* Miniature */}
+                  <div style={{
+                    width: '56px', height: '56px', background: '#252525',
+                    borderRadius: '12px', overflow: 'hidden',
+                    flexShrink: 0, display: 'flex',
+                    alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    {promo.photo_url ? (
+                      promo.photo_url.includes('.mp4') ? (
+                        <video
+                          src={promo.photo_url}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <img
+                          src={promo.photo_url}
+                          alt={promo.titre}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      )
+                    ) : (
+                      <span style={{ fontSize: '22px' }}>🏷️</span>
+                    )}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#888' }}>
-                    {promo.prix_promo.toLocaleString()} FCFA
-                    <span style={{ textDecoration: 'line-through', marginLeft: '8px', color: '#555' }}>
-                      {promo.prix_original.toLocaleString()} FCFA
-                    </span>
-                    <span style={{ marginLeft: '8px', color: '#FF5C00' }}>
-                      -{reduction(promo.prix_original, promo.prix_promo)}%
-                    </span>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                      {promo.titre}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#888' }}>
+                      {promo.prix_promo.toLocaleString()} FCFA
+                      <span style={{ textDecoration: 'line-through', marginLeft: '8px', color: '#555' }}>
+                        {promo.prix_original.toLocaleString()} FCFA
+                      </span>
+                      <span style={{ marginLeft: '8px', color: '#FF5C00' }}>
+                        -{reduction(promo.prix_original, promo.prix_promo)}%
+                      </span>
+                    </div>
+                    {(promo.ville || promo.pays) && (
+                      <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
+                        📍 {[promo.ville, promo.pays].filter(Boolean).join(', ')}
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div style={{
-                  padding: '4px 10px', borderRadius: '8px',
-                  fontSize: '11px', fontWeight: '600',
-                  background: statutColor(promo.statut).bg,
-                  color: statutColor(promo.statut).color
-                }}>
-                  {statutLabel(promo.statut)}
+
+                  <div style={{
+                    padding: '4px 10px', borderRadius: '8px',
+                    fontSize: '11px', fontWeight: '600',
+                    background: statutColor(promo.statut).bg,
+                    color: statutColor(promo.statut).color,
+                    flexShrink: 0
+                  }}>
+                    {statutLabel(promo.statut)}
+                  </div>
                 </div>
               </div>
             ))}
