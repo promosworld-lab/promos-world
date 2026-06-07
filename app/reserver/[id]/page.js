@@ -382,17 +382,17 @@ export default function Reserver() {
             </div>
 
             <button
-              onClick={() => router.push('/')}
-              style={{
-                width: '100%', padding: '14px',
-                background: '#FF5C00', border: 'none',
-                borderRadius: '14px', color: 'white',
-                fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-                marginBottom: '10px'
-              }}
-            >
-              Retour à l'accueil
-            </button>
+  onClick={() => router.push(`/avis?reservation=${reservation.id}&vendeur=${promo?.vendeur_id}`)}
+  style={{
+    width: '100%', padding: '14px',
+    background: '#FF5C00', border: 'none',
+    borderRadius: '14px', color: 'white',
+    fontWeight: '700', fontSize: '14px', cursor: 'pointer',
+    marginBottom: '10px'
+  }}
+>
+  ⭐ Laisser un avis
+</button>
 
             <button
               onClick={() => router.push(`/chat/${promo?.vendeur_id}?promo=${id}`)}
