@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 
-export default function Chat() {
+function ChatContent() {
   const router = useRouter()
   const { vendeurId } = useParams()
   const searchParams = useSearchParams()
@@ -32,7 +32,7 @@ export default function Chat() {
     setUser(data.user)
     fetchVendeur()
     if (promoId) fetchPromo()
-    fetchMessages(data.user.id)
+    await fetchMessages(data.user.id)
     subscribeToMessages(data.user.id)
   }
 
@@ -59,7 +59,9 @@ export default function Chat() {
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .or(`expediteur_id.eq.${userId},destinataire_id.eq.${userId}`)
+      .or(
+        `and(expediteur_id.eq.${userId},destinataire_id.eq.${vendeurId}),and(expediteur_id.eq.${vendeurId},destinataire_id.eq.${userId})`
+      )
       .order('created_at', { ascending: true })
 
     if (!error) setMessages(data || [])
@@ -68,7 +70,7 @@ export default function Chat() {
 
   const subscribeToMessages = (userId) => {
     const channel = supabase
-      .channel('messages')
+      .channel(`chat-${userId}-${vendeurId}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -76,10 +78,14 @@ export default function Chat() {
       }, (payload) => {
         const msg = payload.new
         if (
-          msg.expediteur_id === userId ||
-          msg.destinataire_id === userId
+          (msg.expediteur_id === userId && msg.destinataire_id === vendeurId) ||
+          (msg.expediteur_id === vendeurId && msg.destinataire_id === userId)
         ) {
-          setMessages(prev => [...prev, msg])
+          setMessages(prev => {
+            const exists = prev.find(m => m.id === msg.id)
+            if (exists) return prev
+            return [...prev, msg]
+          })
         }
       })
       .subscribe()
@@ -90,14 +96,17 @@ export default function Chat() {
   const handleEnvoyer = async () => {
     if (!contenu.trim() || !user) return
 
-    const { error } = await supabase.from('messages').insert({
+    const newMessage = {
       expediteur_id: user.id,
       destinataire_id: vendeurId,
       promotion_id: promoId || null,
       contenu: contenu.trim(),
-    })
+    }
 
-    if (!error) setContenu('')
+    setContenu('')
+
+    const { error } = await supabase.from('messages').insert(newMessage)
+    if (error) console.error('Erreur envoi message:', error)
   }
 
   const handleKeyDown = (e) => {
@@ -269,5 +278,23 @@ export default function Chat() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function Chat() {
+  const { Suspense } = require('react')
+  return (
+    <Suspense fallback={
+      <div style={{
+        height: '100vh', background: '#0A0A0A',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'center', color: '#888',
+        fontFamily: 'sans-serif'
+      }}>
+        Chargement...
+      </div>
+    }>
+      <ChatContent />
+    </Suspense>
   )
 }

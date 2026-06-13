@@ -9,6 +9,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [promotions, setPromotions] = useState([])
+  const [reservations, setReservations] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({
@@ -48,6 +49,7 @@ export default function Dashboard() {
 
     setProfile(profileData)
     fetchPromotions(data.user.id)
+    fetchReservations(data.user.id)
   }
 
   const fetchPromotions = async (userId) => {
@@ -60,6 +62,16 @@ export default function Dashboard() {
 
     if (!error) setPromotions(data || [])
     setLoading(false)
+  }
+
+  const fetchReservations = async (userId) => {
+    const { data } = await supabase
+      .from('reservations')
+      .select(`*, promotions!inner(vendeur_id)`)
+      .eq('promotions.vendeur_id', userId)
+      .eq('statut', 'en_attente')
+
+    setReservations(data || [])
   }
 
   const handleMedia = (e) => {
@@ -185,6 +197,16 @@ export default function Dashboard() {
           Promo's<span style={{ color: 'white' }}>World</span>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            onClick={() => router.push('/messages')}
+            style={{
+              padding: '8px 14px', background: '#1A1A1A',
+              border: '1px solid #333', borderRadius: '8px',
+              color: 'white', fontSize: '13px', cursor: 'pointer'
+            }}
+          >
+            💬
+          </button>
           <span style={{ fontSize: '13px', color: '#888' }}>🏪 {profile?.nom}</span>
           <button
             onClick={async () => { await supabase.auth.signOut(); router.push('/auth') }}
@@ -214,16 +236,59 @@ export default function Dashboard() {
               { label: 'Promos actives', value: promotions.filter(p => p.statut === 'actif').length, icon: '✅' },
               { label: 'En attente', value: promotions.filter(p => p.statut === 'en_attente').length, icon: '⏳' },
               { label: 'Total promos', value: promotions.length, icon: '📦' },
+              { label: 'Réservations', value: reservations.length, icon: '🔔', action: () => router.push('/dashboard/reservations') },
             ].map(stat => (
-              <div key={stat.label} style={{
-                background: '#1A1A1A', borderRadius: '14px',
-                padding: '16px', border: '1px solid #2A2A2A'
-              }}>
+              <div
+                key={stat.label}
+                onClick={stat.action}
+                style={{
+                  background: '#1A1A1A', borderRadius: '14px',
+                  padding: '16px', border: stat.action ? '1px solid #FF5C00' : '1px solid #2A2A2A',
+                  cursor: stat.action ? 'pointer' : 'default'
+                }}
+              >
                 <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>{stat.icon} {stat.label}</div>
-                <div style={{ fontSize: '28px', fontWeight: '800', color: '#FF5C00' }}>{stat.value}</div>
+                <div style={{ fontSize: '28px', fontWeight: '800', color: stat.action ? '#FF5C00' : '#FF5C00' }}>{stat.value}</div>
+                {stat.action && (
+                  <div style={{ fontSize: '10px', color: '#FF5C00', marginTop: '4px' }}>Voir tout →</div>
+                )}
               </div>
             ))}
           </div>
+        </div>
+
+        {/* RACCOURCIS */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => router.push('/dashboard/reservations')}
+            style={{
+              padding: '10px 16px', background: '#1A1A1A',
+              border: '1px solid #2A2A2A', borderRadius: '10px',
+              color: 'white', fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}
+          >
+            📦 Réservations reçues
+            {reservations.length > 0 && (
+              <span style={{
+                background: '#FF5C00', color: 'white',
+                fontSize: '10px', fontWeight: '700',
+                padding: '1px 6px', borderRadius: '10px'
+              }}>
+                {reservations.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => router.push('/messages')}
+            style={{
+              padding: '10px 16px', background: '#1A1A1A',
+              border: '1px solid #2A2A2A', borderRadius: '10px',
+              color: 'white', fontSize: '13px', cursor: 'pointer'
+            }}
+          >
+            💬 Mes messages
+          </button>
         </div>
 
         {/* MESSAGE */}
@@ -291,7 +356,6 @@ export default function Dashboard() {
                 />
               </div>
 
-              {/* PHOTO / VIDEO */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Photo ou vidéo de l'article</label>
                 <div
@@ -300,52 +364,25 @@ export default function Dashboard() {
                     border: '2px dashed #333', borderRadius: '12px',
                     padding: '20px', textAlign: 'center',
                     cursor: 'pointer', background: '#111',
-                    transition: 'border-color 0.2s'
                   }}
                 >
                   {photoPreview ? (
                     photo?.type.startsWith('video') ? (
-                      <video
-                        src={photoPreview}
-                        controls
-                        style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px' }}
-                      />
+                      <video src={photoPreview} controls style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px' }} />
                     ) : (
-                      <img
-                        src={photoPreview}
-                        alt="preview"
-                        style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', objectFit: 'cover' }}
-                      />
+                      <img src={photoPreview} alt="preview" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', objectFit: 'cover' }} />
                     )
                   ) : (
                     <>
                       <div style={{ fontSize: '28px', marginBottom: '8px' }}>📸</div>
-                      <div style={{ fontSize: '13px', color: '#888' }}>
-                        Clique pour ajouter une photo ou vidéo
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
-                        JPG, PNG, WEBP, MP4 — max 50MB
-                      </div>
+                      <div style={{ fontSize: '13px', color: '#888' }}>Clique pour ajouter une photo ou vidéo</div>
+                      <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>JPG, PNG, WEBP, MP4 — max 50MB</div>
                     </>
                   )}
                 </div>
-                <input
-                  id="fileInput"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,video/mp4"
-                  style={{ display: 'none' }}
-                  onChange={handleMedia}
-                />
+                <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" style={{ display: 'none' }} onChange={handleMedia} />
                 {photoPreview && (
-                  <button
-                    onClick={() => { setPhoto(null); setPhotoPreview(null) }}
-                    style={{
-                      marginTop: '8px', padding: '6px 12px',
-                      background: 'transparent', border: '1px solid #333',
-                      borderRadius: '8px', color: '#888',
-                      fontSize: '12px', cursor: 'pointer'
-                    }}
-                  >
+                  <button onClick={() => { setPhoto(null); setPhotoPreview(null) }} style={{ marginTop: '8px', padding: '6px 12px', background: 'transparent', border: '1px solid #333', borderRadius: '8px', color: '#888', fontSize: '12px', cursor: 'pointer' }}>
                     ✕ Supprimer
                   </button>
                 )}
@@ -353,88 +390,47 @@ export default function Dashboard() {
 
               <div>
                 <label style={labelStyle}>Catégorie</label>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={formData.categorie}
-                  onChange={e => setFormData({ ...formData, categorie: e.target.value })}
-                >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat} style={{ background: '#111' }}>{cat}</option>
-                  ))}
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={formData.categorie} onChange={e => setFormData({ ...formData, categorie: e.target.value })}>
+                  {categories.map(cat => (<option key={cat} value={cat} style={{ background: '#111' }}>{cat}</option>))}
                 </select>
               </div>
 
               <div>
                 <label style={labelStyle}>Stock disponible</label>
-                <input
-                  style={inputStyle}
-                  type="number" min="1"
-                  value={formData.stock}
-                  onChange={e => setFormData({ ...formData, stock: e.target.value })}
-                />
+                <input style={inputStyle} type="number" min="1" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
               </div>
 
               <div>
                 <label style={labelStyle}>Prix original (FCFA) *</label>
-                <input
-                  style={inputStyle}
-                  type="number" placeholder="58000"
-                  value={formData.prix_original}
-                  onChange={e => setFormData({ ...formData, prix_original: e.target.value })}
-                />
+                <input style={inputStyle} type="number" placeholder="58000" value={formData.prix_original} onChange={e => setFormData({ ...formData, prix_original: e.target.value })} />
               </div>
 
               <div>
                 <label style={labelStyle}>Prix promo (FCFA) *</label>
-                <input
-                  style={inputStyle}
-                  type="number" placeholder="35000"
-                  value={formData.prix_promo}
-                  onChange={e => setFormData({ ...formData, prix_promo: e.target.value })}
-                />
+                <input style={inputStyle} type="number" placeholder="35000" value={formData.prix_promo} onChange={e => setFormData({ ...formData, prix_promo: e.target.value })} />
               </div>
 
               {formData.prix_original && formData.prix_promo && Number(formData.prix_promo) < Number(formData.prix_original) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <div style={{
-                    background: 'rgba(255,92,0,0.1)', border: '1px solid rgba(255,92,0,0.2)',
-                    borderRadius: '10px', padding: '10px 14px',
-                    fontSize: '13px', color: '#FF5C00'
-                  }}>
-                    🔥 Réduction de {reduction(formData.prix_original, formData.prix_promo)}% —
-                    Acompte client : {Math.round(formData.prix_promo * 0.2).toLocaleString()} FCFA
+                  <div style={{ background: 'rgba(255,92,0,0.1)', border: '1px solid rgba(255,92,0,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#FF5C00' }}>
+                    🔥 Réduction de {reduction(formData.prix_original, formData.prix_promo)}% — Acompte client : {Math.round(formData.prix_promo * 0.2).toLocaleString()} FCFA
                   </div>
                 </div>
               )}
 
               <div>
                 <label style={labelStyle}>Pays</label>
-                <input
-                  style={inputStyle}
-                  placeholder="Ex: Bénin"
-                  value={formData.pays}
-                  onChange={e => setFormData({ ...formData, pays: e.target.value })}
-                />
+                <input style={inputStyle} placeholder="Ex: Bénin" value={formData.pays} onChange={e => setFormData({ ...formData, pays: e.target.value })} />
               </div>
 
               <div>
                 <label style={labelStyle}>Ville</label>
-                <input
-                  style={inputStyle}
-                  placeholder="Ex: Cotonou"
-                  value={formData.ville}
-                  onChange={e => setFormData({ ...formData, ville: e.target.value })}
-                />
+                <input style={inputStyle} placeholder="Ex: Cotonou" value={formData.ville} onChange={e => setFormData({ ...formData, ville: e.target.value })} />
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Date d'expiration (optionnel)</label>
-                <input
-                  style={inputStyle}
-                  type="date"
-                  value={formData.date_expiration}
-                  onChange={e => setFormData({ ...formData, date_expiration: e.target.value })}
-                />
+                <input style={inputStyle} type="date" value={formData.date_expiration} onChange={e => setFormData({ ...formData, date_expiration: e.target.value })} />
               </div>
             </div>
 
@@ -459,80 +455,39 @@ export default function Dashboard() {
         {loading ? (
           <div style={{ textAlign: 'center', color: '#888', padding: '40px' }}>Chargement...</div>
         ) : promotions.length === 0 ? (
-          <div style={{
-            textAlign: 'center', color: '#888',
-            padding: '60px 20px', background: '#1A1A1A',
-            borderRadius: '16px', border: '1px solid #2A2A2A'
-          }}>
+          <div style={{ textAlign: 'center', color: '#888', padding: '60px 20px', background: '#1A1A1A', borderRadius: '16px', border: '1px solid #2A2A2A' }}>
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏷️</div>
-            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>
-              Aucune promo publiée
-            </div>
+            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>Aucune promo publiée</div>
             <div style={{ fontSize: '13px' }}>Clique sur "Publier une promo" pour commencer</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {promotions.map(promo => (
-              <div key={promo.id} style={{
-                background: '#1A1A1A', borderRadius: '14px',
-                border: '1px solid #2A2A2A', overflow: 'hidden'
-              }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center',
-                  gap: '14px', padding: '16px'
-                }}>
-                  {/* Miniature */}
-                  <div style={{
-                    width: '56px', height: '56px', background: '#252525',
-                    borderRadius: '12px', overflow: 'hidden',
-                    flexShrink: 0, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center'
-                  }}>
+              <div key={promo.id} style={{ background: '#1A1A1A', borderRadius: '14px', border: '1px solid #2A2A2A', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px' }}>
+                  <div style={{ width: '56px', height: '56px', background: '#252525', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {promo.photo_url ? (
                       promo.photo_url.includes('.mp4') ? (
-                        <video
-                          src={promo.photo_url}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
+                        <video src={promo.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
-                        <img
-                          src={promo.photo_url}
-                          alt={promo.titre}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
+                        <img src={promo.photo_url} alt={promo.titre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       )
                     ) : (
                       <span style={{ fontSize: '22px' }}>🏷️</span>
                     )}
                   </div>
-
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                      {promo.titre}
-                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{promo.titre}</div>
                     <div style={{ fontSize: '12px', color: '#888' }}>
                       {promo.prix_promo.toLocaleString()} FCFA
-                      <span style={{ textDecoration: 'line-through', marginLeft: '8px', color: '#555' }}>
-                        {promo.prix_original.toLocaleString()} FCFA
-                      </span>
-                      <span style={{ marginLeft: '8px', color: '#FF5C00' }}>
-                        -{reduction(promo.prix_original, promo.prix_promo)}%
-                      </span>
+                      <span style={{ textDecoration: 'line-through', marginLeft: '8px', color: '#555' }}>{promo.prix_original.toLocaleString()} FCFA</span>
+                      <span style={{ marginLeft: '8px', color: '#FF5C00' }}>-{reduction(promo.prix_original, promo.prix_promo)}%</span>
                     </div>
                     {(promo.ville || promo.pays) && (
-                      <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
-                        📍 {[promo.ville, promo.pays].filter(Boolean).join(', ')}
-                      </div>
+                      <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>📍 {[promo.ville, promo.pays].filter(Boolean).join(', ')}</div>
                     )}
                   </div>
-
-                  <div style={{
-                    padding: '4px 10px', borderRadius: '8px',
-                    fontSize: '11px', fontWeight: '600',
-                    background: statutColor(promo.statut).bg,
-                    color: statutColor(promo.statut).color,
-                    flexShrink: 0
-                  }}>
+                  <div style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '600', background: statutColor(promo.statut).bg, color: statutColor(promo.statut).color, flexShrink: 0 }}>
                     {statutLabel(promo.statut)}
                   </div>
                 </div>

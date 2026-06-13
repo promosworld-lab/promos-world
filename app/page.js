@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 export default function Home() {
   const router = useRouter()
   const [user, setUser] = useState(null)
+  const [role, setRole] = useState(null)
   const [promotions, setPromotions] = useState([])
   const [categorie, setCategorie] = useState('Tout')
   const [recherche, setRecherche] = useState('')
@@ -24,6 +25,14 @@ export default function Home() {
   const checkUser = async () => {
     const { data } = await supabase.auth.getUser()
     setUser(data.user)
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      setRole(profile?.role || 'client')
+    }
   }
 
   const fetchPromotions = async () => {
@@ -41,6 +50,7 @@ export default function Home() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setUser(null)
+    setRole(null)
   }
 
   const promotionsFiltrees = promotions.filter(p => {
@@ -70,26 +80,72 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           {user ? (
             <>
+              {role === 'vendeur' && (
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  style={{
+                    padding: '8px 16px', background: '#1A1A1A',
+                    border: '1px solid #333', borderRadius: '8px',
+                    color: 'white', fontSize: '13px', cursor: 'pointer'
+                  }}
+                >
+                  🏪 Dashboard
+                </button>
+              )}
+              {role === 'admin' && (
+                <button
+                  onClick={() => router.push('/admin')}
+                  style={{
+                    padding: '8px 16px', background: '#1A1A1A',
+                    border: '1px solid #333', borderRadius: '8px',
+                    color: 'white', fontSize: '13px', cursor: 'pointer'
+                  }}
+                >
+                  ⚙️ Admin
+                </button>
+              )}
+              {role === 'client' && (
+                <button
+                  onClick={() => router.push('/reservations')}
+                  style={{
+                    padding: '8px 16px', background: '#1A1A1A',
+                    border: '1px solid #333', borderRadius: '8px',
+                    color: 'white', fontSize: '13px', cursor: 'pointer'
+                  }}
+                >
+                  📋 Mes réservations
+                </button>
+              )}
               <button
-                onClick={() => router.push('/dashboard')}
+                onClick={() => router.push('/messages')}
                 style={{
                   padding: '8px 16px', background: '#1A1A1A',
                   border: '1px solid #333', borderRadius: '8px',
                   color: 'white', fontSize: '13px', cursor: 'pointer'
                 }}
               >
-                🏪 Dashboard
+                💬
               </button>
               <button
-                onClick={handleLogout}
-                style={{
-                  padding: '8px 16px', background: 'transparent',
-                  border: '1px solid #333', borderRadius: '8px',
-                  color: '#888', fontSize: '13px', cursor: 'pointer'
-                }}
-              >
-                Déconnexion
-              </button>
+  onClick={() => router.push('/profil')}
+  style={{
+    padding: '8px 14px', background: '#1A1A1A',
+    border: '1px solid #333', borderRadius: '8px',
+    color: 'white', fontSize: '13px', cursor: 'pointer'
+  }}
+>
+  👤
+</button>
+<button
+  onClick={handleLogout}
+  style={{
+    padding: '8px 16px', background: 'transparent',
+    border: '1px solid #333', borderRadius: '8px',
+    color: '#888', fontSize: '13px', cursor: 'pointer'
+  }}
+>
+  Déconnexion
+</button>
             </>
           ) : (
             <button
@@ -234,16 +290,12 @@ export default function Home() {
               Chargement...
             </div>
           ) : promotionsFiltrees.length === 0 ? (
-            <div style={{
-              textAlign: 'center', color: '#888', padding: '60px 20px'
-            }}>
+            <div style={{ textAlign: 'center', color: '#888', padding: '60px 20px' }}>
               <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏷️</div>
               <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>
                 Aucune promo disponible
               </div>
-              <div style={{ fontSize: '13px' }}>
-                Reviens bientôt ou change de filtre
-              </div>
+              <div style={{ fontSize: '13px' }}>Reviens bientôt ou change de filtre</div>
             </div>
           ) : (
             <div style={{
@@ -263,7 +315,6 @@ export default function Home() {
                   onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'}
                   onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
                 >
-                  {/* IMAGE / VIDEO */}
                   <div style={{
                     height: '180px', background: '#252525',
                     display: 'flex', alignItems: 'center',
@@ -297,7 +348,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* INFOS */}
                   <div style={{ padding: '14px' }}>
                     <div style={{
                       fontSize: '14px', fontWeight: '600',
@@ -306,9 +356,7 @@ export default function Home() {
                     }}>
                       {promo.titre}
                     </div>
-                    <div style={{
-                      fontSize: '12px', color: '#888', marginBottom: '4px'
-                    }}>
+                    <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
                       {promo.profiles?.nom}
                     </div>
                     {(promo.ville || promo.pays) && (

@@ -9,8 +9,8 @@ export default function PromoDetail() {
   const { id } = useParams()
   const [promo, setPromo] = useState(null)
   const [user, setUser] = useState(null)
+  const [avis, setAvis] = useState([])
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState('')
 
   useEffect(() => {
     fetchPromo()
@@ -30,38 +30,43 @@ export default function PromoDetail() {
       .eq('id', id)
       .single()
 
-    if (!error) setPromo(data)
+    if (!error) {
+      setPromo(data)
+      fetchAvis(data.vendeur_id)
+    }
     setLoading(false)
   }
 
-  const handleReserver = async () => {
-    if (!user) {
-      router.push('/auth')
-      return
-    }
+  const fetchAvis = async (vendeurId) => {
+    const { data } = await supabase
+      .from('avis')
+      .select(`*, client:profiles!avis_client_id_fkey(nom)`)
+      .eq('vendeur_id', vendeurId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    setAvis(data || [])
+  }
+
+  const moyenneNote = avis.length > 0
+    ? (avis.reduce((sum, a) => sum + a.note, 0) / avis.length).toFixed(1)
+    : null
+
+  const handleReserver = () => {
+    if (!user) { router.push('/auth'); return }
     router.push(`/reserver/${id}`)
   }
 
   const reduction = (original, promo) => Math.round((1 - promo / original) * 100)
 
   if (loading) return (
-    <div style={{
-      minHeight: '100vh', background: '#0A0A0A',
-      display: 'flex', alignItems: 'center',
-      justifyContent: 'center', color: '#888',
-      fontFamily: 'sans-serif'
-    }}>
+    <div style={{ minHeight: '100vh', background: '#0A0A0A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontFamily: 'sans-serif' }}>
       Chargement...
     </div>
   )
 
   if (!promo) return (
-    <div style={{
-      minHeight: '100vh', background: '#0A0A0A',
-      display: 'flex', alignItems: 'center',
-      justifyContent: 'center', color: '#888',
-      fontFamily: 'sans-serif'
-    }}>
+    <div style={{ minHeight: '100vh', background: '#0A0A0A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontFamily: 'sans-serif' }}>
       Promo introuvable.
     </div>
   )
@@ -97,15 +102,23 @@ export default function PromoDetail() {
 
       <div style={{ paddingTop: '70px', maxWidth: '600px', margin: '0 auto', padding: '80px 20px 40px' }}>
 
-        {/* IMAGE PLACEHOLDER */}
+        {/* IMAGE / VIDEO */}
         <div style={{
-          height: '240px', background: '#1A1A1A',
-          borderRadius: '20px', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-          fontSize: '80px', marginBottom: '24px',
-          border: '1px solid #2A2A2A', position: 'relative'
+          height: '260px', background: '#1A1A1A',
+          borderRadius: '20px', overflow: 'hidden',
+          marginBottom: '24px', border: '1px solid #2A2A2A',
+          position: 'relative', display: 'flex',
+          alignItems: 'center', justifyContent: 'center'
         }}>
-          🏷️
+          {promo.photo_url ? (
+            promo.photo_url.includes('.mp4') ? (
+              <video src={promo.photo_url} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <img src={promo.photo_url} alt={promo.titre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            )
+          ) : (
+            <span style={{ fontSize: '80px' }}>🏷️</span>
+          )}
           <div style={{
             position: 'absolute', top: '16px', left: '16px',
             background: '#FF5C00', color: 'white',
@@ -121,29 +134,38 @@ export default function PromoDetail() {
           <h1 style={{ fontSize: '22px', fontWeight: '800', marginBottom: '8px' }}>
             {promo.titre}
           </h1>
+
+          {/* VENDEUR + NOTE */}
           <div style={{
             display: 'flex', alignItems: 'center',
-            gap: '8px', marginBottom: '16px'
+            justifyContent: 'space-between', marginBottom: '16px'
           }}>
-            <div style={{
-              width: '8px', height: '8px',
-              borderRadius: '50%', background: '#00C48C'
-            }} />
-            <span style={{ fontSize: '13px', color: '#888' }}>
-              {promo.profiles?.nom}
-            </span>
-            {promo.profiles?.adresse && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00C48C' }} />
               <span style={{ fontSize: '13px', color: '#888' }}>
-                · 📍 {promo.profiles?.adresse}
+                {promo.profiles?.nom}
               </span>
+              {promo.profiles?.adresse && (
+                <span style={{ fontSize: '13px', color: '#555' }}>
+                  · 📍 {promo.profiles.adresse}
+                </span>
+              )}
+            </div>
+            {moyenneNote && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '4px',
+                background: '#1A1A1A', padding: '4px 10px',
+                borderRadius: '20px', border: '1px solid #2A2A2A'
+              }}>
+                <span style={{ fontSize: '12px' }}>⭐</span>
+                <span style={{ fontSize: '13px', fontWeight: '700' }}>{moyenneNote}</span>
+                <span style={{ fontSize: '11px', color: '#888' }}>({avis.length})</span>
+              </div>
             )}
           </div>
 
           {/* PRIX */}
-          <div style={{
-            display: 'flex', alignItems: 'baseline',
-            gap: '12px', marginBottom: '20px'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '20px' }}>
             <span style={{ fontSize: '28px', fontWeight: '800', color: '#FF5C00' }}>
               {promo.prix_promo.toLocaleString()} FCFA
             </span>
@@ -159,18 +181,14 @@ export default function PromoDetail() {
           padding: '16px', border: '1px solid #2A2A2A',
           marginBottom: '16px'
         }}>
-          <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px' }}>
-            Détails
-          </div>
+          <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px' }}>Détails</div>
           {[
             { label: 'Catégorie', value: promo.categorie },
             { label: 'Stock disponible', value: `${promo.stock} article(s)` },
+            { label: 'Localisation', value: [promo.ville, promo.pays].filter(Boolean).join(', ') || 'Non précisé' },
             { label: 'Expire le', value: promo.date_expiration ? new Date(promo.date_expiration).toLocaleDateString('fr-FR') : 'Non précisé' },
           ].map(item => (
-            <div key={item.label} style={{
-              display: 'flex', justifyContent: 'space-between',
-              marginBottom: '8px', fontSize: '13px'
-            }}>
+            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
               <span style={{ color: '#888' }}>{item.label}</span>
               <span style={{ fontWeight: '500' }}>{item.value}</span>
             </div>
@@ -184,12 +202,8 @@ export default function PromoDetail() {
             padding: '16px', border: '1px solid #2A2A2A',
             marginBottom: '16px'
           }}>
-            <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '8px' }}>
-              Description
-            </div>
-            <div style={{ fontSize: '13px', color: '#888', lineHeight: '1.6' }}>
-              {promo.description}
-            </div>
+            <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '8px' }}>Description</div>
+            <div style={{ fontSize: '13px', color: '#888', lineHeight: '1.6' }}>{promo.description}</div>
           </div>
         )}
 
@@ -197,7 +211,7 @@ export default function PromoDetail() {
         <div style={{
           background: 'rgba(255,92,0,0.08)', borderRadius: '16px',
           padding: '16px', border: '1px solid rgba(255,92,0,0.2)',
-          marginBottom: '24px'
+          marginBottom: '16px'
         }}>
           <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: '#FF5C00' }}>
             🔒 Système de réservation
@@ -207,24 +221,59 @@ export default function PromoDetail() {
             { label: 'Reste à payer en boutique (80%)', value: `${restant.toLocaleString()} FCFA`, color: 'white' },
             { label: 'Réservation valable', value: '3 mois', color: 'white' },
           ].map(item => (
-            <div key={item.label} style={{
-              display: 'flex', justifyContent: 'space-between',
-              marginBottom: '8px', fontSize: '13px'
-            }}>
+            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
               <span style={{ color: '#888' }}>{item.label}</span>
               <span style={{ fontWeight: '700', color: item.color }}>{item.value}</span>
             </div>
           ))}
         </div>
 
-        {/* MESSAGE */}
-        {message && (
+        {/* AVIS */}
+        {avis.length > 0 && (
           <div style={{
-            padding: '12px 16px', borderRadius: '10px', marginBottom: '16px',
-            background: 'rgba(255,60,60,0.1)', border: '1px solid #FF3C3C',
-            color: '#FF3C3C', fontSize: '13px'
+            background: '#1A1A1A', borderRadius: '16px',
+            padding: '16px', border: '1px solid #2A2A2A',
+            marginBottom: '20px'
           }}>
-            {message}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: '700' }}>
+                Avis clients
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '16px' }}>⭐</span>
+                <span style={{ fontSize: '16px', fontWeight: '800', color: '#FF5C00' }}>{moyenneNote}</span>
+                <span style={{ fontSize: '12px', color: '#888' }}>/ 5 · {avis.length} avis</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {avis.map(a => (
+                <div key={a.id} style={{
+                  background: '#252525', borderRadius: '12px',
+                  padding: '12px', border: '1px solid #2A2A2A'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600' }}>
+                      {a.client?.nom || 'Client anonyme'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#FFB800' }}>
+                      {'⭐'.repeat(a.note)}
+                    </div>
+                  </div>
+                  {a.commentaire && (
+                    <div style={{ fontSize: '12px', color: '#888', lineHeight: '1.5' }}>
+                      {a.commentaire}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '10px', color: '#555', marginTop: '6px' }}>
+                    {new Date(a.created_at).toLocaleDateString('fr-FR')}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -233,13 +282,15 @@ export default function PromoDetail() {
           onClick={handleReserver}
           style={{
             width: '100%', padding: '16px',
-            background: '#FF5C00', border: 'none',
-            borderRadius: '14px', color: 'white',
+            background: promo.stock === 0 ? '#333' : '#FF5C00',
+            border: 'none', borderRadius: '14px', color: 'white',
             fontWeight: '700', fontSize: '15px',
-            cursor: 'pointer', marginBottom: '10px'
+            cursor: promo.stock === 0 ? 'not-allowed' : 'pointer',
+            marginBottom: '10px'
           }}
+          disabled={promo.stock === 0}
         >
-          🔒 Réserver — Payer {acompte.toLocaleString()} FCFA
+          {promo.stock === 0 ? '😔 Stock épuisé' : `🔒 Réserver — Payer ${acompte.toLocaleString()} FCFA`}
         </button>
 
         <button
@@ -248,17 +299,13 @@ export default function PromoDetail() {
             width: '100%', padding: '14px',
             background: '#1A1A1A', border: '1px solid #2A2A2A',
             borderRadius: '14px', color: 'white',
-            fontWeight: '500', fontSize: '14px',
-            cursor: 'pointer'
+            fontWeight: '500', fontSize: '14px', cursor: 'pointer'
           }}
         >
           💬 Contacter le vendeur
         </button>
 
-        <div style={{
-          textAlign: 'center', fontSize: '11px',
-          color: '#555', marginTop: '12px', lineHeight: '1.5'
-        }}>
+        <div style={{ textAlign: 'center', fontSize: '11px', color: '#555', marginTop: '12px', lineHeight: '1.5' }}>
           Les fonds sont sécurisés par Promo's World jusqu'à confirmation de la transaction
         </div>
       </div>
