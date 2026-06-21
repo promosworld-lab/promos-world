@@ -82,31 +82,44 @@ export default function AuthPage() {
         }, 2000)
       }
     } else {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  })
 
-      if (error) {
-        setMessage(error.message)
-        setLoading(false)
-        return
-      }
+  if (error) {
+    setMessage(error.message)
+    setLoading(false)
+    return
+  }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', data.user.id)
+    .maybeSingle()
 
-      if (profile?.role === 'vendeur') {
-        router.push('/dashboard')
-      } else if (profile?.role === 'admin') {
-        router.push('/admin')
-      } else {
-        router.push('/')
-      }
-    }
+  if (profileError) {
+    console.error('Erreur profil :', profileError)
+    setMessage("Impossible de récupérer le rôle du compte.")
+    setLoading(false)
+    return
+  }
+
+  if (!profile) {
+    setMessage("Profil introuvable. Déconnecte-toi puis reconnecte-toi.")
+    setLoading(false)
+    return
+  }
+
+  if (profile.role === 'vendeur') {
+    router.replace('/dashboard')
+  } else if (profile.role === 'admin') {
+    router.replace('/admin')
+  } else {
+    router.replace('/')
+  }
+}
 
     setLoading(false)
   }
