@@ -6,84 +6,149 @@ import { useRouter } from 'next/navigation'
 
 export default function Dashboard() {
   const router = useRouter()
+
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [promotions, setPromotions] = useState([])
   const [reservations, setReservations] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({
-    titre: '',
-    description: '',
-    categorie: '👗 Mode',
-    prix_original: '',
-    prix_promo: '',
-    stock: 1,
-    date_expiration: '',
-    pays: '',
-    ville: ''
-  })
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [message, setMessage] = useState('')
 
-  const categories = ['👗 Mode', '📱 Tech', '🍔 Food', '🏠 Maison', '💄 Beauté', '👟 Chaussures']
+  const [formData, setFormData] = useState({
+    titre: '',
+    description: '',
+    categorie: 'Mode',
+    prix_original: '',
+    prix_promo: '',
+    stock: 1,
+    date_expiration: '',
+    pays: '',
+    ville: '',
+  })
+
+  const categories = ['Mode', 'Tech', 'Food', 'Maison', 'Beauté', 'Chaussures', 'Électroménager', 'Autres']
 
   useEffect(() => {
     checkUser()
   }, [])
 
   const checkUser = async () => {
-    const { data } = await supabase.auth.getUser()
-    if (!data.user) { router.push('/auth'); return }
+    setLoading(true)
+
+    const { data, error } = await supabase.auth.getUser()
+
+    if (error || !data.user) {
+      router.push('/auth')
+      return
+    }
+
     setUser(data.user)
 
-    const { data: profileData } = await supabase
+    const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', data.user.id)
       .single()
 
-    if (profileData?.role !== 'vendeur') { router.push('/'); return }
+    if (profileError || !profileData) {
+      setMessage('Profil introuvable. Reconnecte-toi ou vérifie la table profiles.')
+      setLoading(false)
+      return
+    }
+
+    if (profileData.role !== 'vendeur' && profileData.role !== 'admin') {
+      router.push('/')
+      return
+    }
 
     setProfile(profileData)
-    fetchPromotions(data.user.id)
-    fetchReservations(data.user.id)
+    await fetchPromotions(data.user.id)
+    await fetchReservations(data.user.id)
+
+    setLoading(false)
   }
 
   const fetchPromotions = async (userId) => {
-    setLoading(true)
     const { data, error } = await supabase
       .from('promotions')
       .select('*')
       .eq('vendeur_id', userId)
       .order('created_at', { ascending: false })
 
-    if (!error) setPromotions(data || [])
-    setLoading(false)
+    if (!error) {
+      setPromotions(data || [])
+    }
   }
 
   const fetchReservations = async (userId) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('reservations')
-      .select(`*, promotions!inner(vendeur_id)`)
+      .select('*, promotions!inner(id, titre, vendeur_id, prix_promo)')
       .eq('promotions.vendeur_id', userId)
-      .eq('statut', 'en_attente')
+      .order('created_at', { ascending: false })
 
-    setReservations(data || [])
+    if (!error) {
+      setReservations(data || [])
+    }
   }
 
   const handleMedia = (e) => {
     const file = e.target.files[0]
     if (!file) return
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4']
+    const maxSize = 50 * 1024 * 1024
+
+    if (!allowedTypes.includes(file.type)) {
+      setMessage('Format refusé. Utilise JPG, PNG, WEBP ou MP4.')
+      return
+    }
+
+    if (file.size > maxSize) {
+      setMessage('Fichier trop lourd. Maximum 50MB.')
+      return
+    }
+
     setPhoto(file)
     setPhotoPreview(URL.createObjectURL(file))
+    setMessage('')
+  }
+
+  const resetForm = () => {
+    setFormData({
+      titre: '',
+      description: '',
+      categorie: 'Mode',
+      prix_original: '',
+      prix_promo: '',
+      stock: 1,
+      date_expiration: '',
+      pays: '',
+      ville: '',
+    })
+    setPhoto(null)
+    setPhotoPreview(null)
   }
 
   const handlePublier = async () => {
-    if (!formData.titre || !formData.prix_original || !formData.prix_promo) {
-      setMessage('Remplis tous les champs obligatoires.')
+    setMessage('')
+
+    if (!user) {
+      setMessage('Tu dois être connecté.')
+      return
+    }
+
+    if (!formData.titre || !formData.prix_original || !formData.prix_promo || !formData.stock) {
+      setMessage('Remplis le titre, les prix et le stock.')
+      return
+    }
+
+    if (Number(formData.prix_promo) <= 0 || Number(formData.prix_original) <= 0) {
+      setMessage('Les prix doivent être supérieurs à zéro.')
       return
     }
 
@@ -92,36 +157,45 @@ export default function Dashboard() {
       return
     }
 
+    if (Number(formData.stock) < 1) {
+      setMessage('Le stock doit être au moins égal à 1.')
+      return
+    }
+
     setUploadingPhoto(true)
+
     let photo_url = null
+    let media_type = null
 
     if (photo) {
       const fileExt = photo.name.split('.').pop()
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`
+      const cleanName = `${user.id}-${Date.now()}.${fileExt}`
 
       const { error: uploadError } = await supabase.storage
         .from('promos')
-        .upload(fileName, photo)
+        .upload(cleanName, photo, {
+          cacheControl: '3600',
+          upsert: false,
+        })
 
       if (uploadError) {
-        setMessage('Erreur lors du téléchargement du fichier.')
+        setMessage("Erreur pendant l'upload du fichier. Vérifie le bucket Supabase nommé promos.")
         setUploadingPhoto(false)
         return
       }
 
       const { data: urlData } = supabase.storage
         .from('promos')
-        .getPublicUrl(fileName)
+        .getPublicUrl(cleanName)
 
       photo_url = urlData.publicUrl
+      media_type = photo.type.startsWith('video') ? 'video' : 'image'
     }
-
-    setUploadingPhoto(false)
 
     const { error } = await supabase.from('promotions').insert({
       vendeur_id: user.id,
-      titre: formData.titre,
-      description: formData.description,
+      titre: formData.titre.trim(),
+      description: formData.description.trim(),
       categorie: formData.categorie,
       prix_original: Number(formData.prix_original),
       prix_promo: Number(formData.prix_promo),
@@ -129,25 +203,27 @@ export default function Dashboard() {
       date_expiration: formData.date_expiration || null,
       statut: 'en_attente',
       photo_url,
-      pays: formData.pays,
-      ville: formData.ville,
+      media_type,
+      pays: formData.pays.trim(),
+      ville: formData.ville.trim(),
     })
 
+    setUploadingPhoto(false)
+
     if (error) {
-      setMessage('Erreur lors de la publication.')
+      setMessage(`Erreur Supabase : ${error.message}`)
       return
     }
 
-    setMessage("Promo soumise ! En attente de validation par l'admin.")
+    setMessage("Promo soumise avec succès. Elle attend la validation de l'admin.")
     setShowForm(false)
-    setFormData({
-      titre: '', description: '', categorie: '👗 Mode',
-      prix_original: '', prix_promo: '', stock: 1,
-      date_expiration: '', pays: '', ville: ''
-    })
-    setPhoto(null)
-    setPhotoPreview(null)
-    fetchPromotions(user.id)
+    resetForm()
+    await fetchPromotions(user.id)
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    router.push('/auth')
   }
 
   const statutColor = (statut) => {
@@ -164,31 +240,53 @@ export default function Dashboard() {
     return 'Expiré'
   }
 
-  const reduction = (original, promo) => Math.round((1 - promo / original) * 100)
+  const reduction = (original, promo) => {
+    if (!original || !promo) return 0
+    return Math.round((1 - Number(promo) / Number(original)) * 100)
+  }
+
+  const formatMoney = (value) => {
+    return Number(value || 0).toLocaleString('fr-FR')
+  }
 
   const inputStyle = {
-    width: '100%', padding: '12px 14px',
-    background: '#111', border: '1px solid #333',
-    borderRadius: '10px', color: 'white',
-    fontSize: '13px', outline: 'none',
-    boxSizing: 'border-box'
+    width: '100%',
+    padding: '12px 14px',
+    background: '#111',
+    border: '1px solid #333',
+    borderRadius: '10px',
+    color: 'white',
+    fontSize: '13px',
+    outline: 'none',
+    boxSizing: 'border-box',
   }
 
   const labelStyle = {
-    fontSize: '12px', color: '#888',
-    display: 'block', marginBottom: '6px'
+    fontSize: '12px',
+    color: '#888',
+    display: 'block',
+    marginBottom: '6px',
   }
+
+  const activePromos = promotions.filter(p => p.statut === 'actif').length
+  const pendingPromos = promotions.filter(p => p.statut === 'en_attente').length
+  const rejectedPromos = promotions.filter(p => p.statut === 'rejete').length
+  const totalReservations = reservations.length
 
   return (
     <div style={{ minHeight: '100vh', background: '#0A0A0A', color: 'white', fontFamily: 'sans-serif' }}>
-
-      {/* NAVBAR */}
       <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0,
-        background: '#0A0A0A', borderBottom: '1px solid #1E1E1E',
-        padding: '14px 20px', display: 'flex',
-        alignItems: 'center', justifyContent: 'space-between',
-        zIndex: 100
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        background: '#0A0A0A',
+        borderBottom: '1px solid #1E1E1E',
+        padding: '14px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        zIndex: 100,
       }}>
         <div
           onClick={() => router.push('/')}
@@ -196,151 +294,211 @@ export default function Dashboard() {
         >
           Promo's<span style={{ color: 'white' }}>World</span>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button
-            onClick={() => router.push('/messages')}
-            style={{
-              padding: '8px 14px', background: '#1A1A1A',
-              border: '1px solid #333', borderRadius: '8px',
-              color: 'white', fontSize: '13px', cursor: 'pointer'
-            }}
-          >
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button onClick={() => router.push('/messages')} style={{
+            padding: '8px 14px',
+            background: '#1A1A1A',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
             💬
           </button>
-          <span style={{ fontSize: '13px', color: '#888' }}>🏪 {profile?.nom}</span>
-          <button
-            onClick={async () => { await supabase.auth.signOut(); router.push('/auth') }}
-            style={{
-              padding: '8px 16px', background: 'transparent',
-              border: '1px solid #333', borderRadius: '8px',
-              color: '#888', fontSize: '13px', cursor: 'pointer'
-            }}
-          >
+
+          <button onClick={() => router.push('/wallet')} style={{
+            padding: '8px 14px',
+            background: '#1A1A1A',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
+            💰
+          </button>
+
+          <span style={{ fontSize: '13px', color: '#888' }}>
+            🏪 {profile?.nom || 'Vendeur'}
+          </span>
+
+          <button onClick={logout} style={{
+            padding: '8px 16px',
+            background: 'transparent',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            color: '#888',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
             Déconnexion
           </button>
         </div>
       </div>
 
-      <div style={{ padding: '80px 20px 40px', maxWidth: '900px', margin: '0 auto' }}>
-
-        {/* HEADER */}
+      <div style={{ padding: '90px 20px 40px', maxWidth: '1000px', margin: '0 auto' }}>
         <div style={{ marginBottom: '28px' }}>
-          <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Bonjour 👋</div>
-          <div style={{ fontSize: '24px', fontWeight: '800', marginBottom: '20px' }}>
-            {profile?.nom}
+          <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Dashboard vendeur</div>
+          <div style={{ fontSize: '26px', fontWeight: '800', marginBottom: '20px' }}>
+            Bonjour, {profile?.nom || 'vendeur'} 👋
           </div>
 
-          {/* STATS */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
             {[
-              { label: 'Promos actives', value: promotions.filter(p => p.statut === 'actif').length, icon: '✅' },
-              { label: 'En attente', value: promotions.filter(p => p.statut === 'en_attente').length, icon: '⏳' },
+              { label: 'Promos actives', value: activePromos, icon: '✅' },
+              { label: 'En attente', value: pendingPromos, icon: '⏳' },
+              { label: 'Rejetées', value: rejectedPromos, icon: '❌' },
               { label: 'Total promos', value: promotions.length, icon: '📦' },
-              { label: 'Réservations', value: reservations.length, icon: '🔔', action: () => router.push('/dashboard/reservations') },
+              { label: 'Réservations', value: totalReservations, icon: '🔔', action: () => router.push('/dashboard/reservations') },
             ].map(stat => (
               <div
                 key={stat.label}
                 onClick={stat.action}
                 style={{
-                  background: '#1A1A1A', borderRadius: '14px',
-                  padding: '16px', border: stat.action ? '1px solid #FF5C00' : '1px solid #2A2A2A',
-                  cursor: stat.action ? 'pointer' : 'default'
+                  background: '#1A1A1A',
+                  borderRadius: '14px',
+                  padding: '16px',
+                  border: stat.action ? '1px solid #FF5C00' : '1px solid #2A2A2A',
+                  cursor: stat.action ? 'pointer' : 'default',
                 }}
               >
-                <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>{stat.icon} {stat.label}</div>
-                <div style={{ fontSize: '28px', fontWeight: '800', color: stat.action ? '#FF5C00' : '#FF5C00' }}>{stat.value}</div>
+                <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>
+                  {stat.icon} {stat.label}
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: '800', color: '#FF5C00' }}>
+                  {stat.value}
+                </div>
                 {stat.action && (
-                  <div style={{ fontSize: '10px', color: '#FF5C00', marginTop: '4px' }}>Voir tout →</div>
+                  <div style={{ fontSize: '10px', color: '#FF5C00', marginTop: '4px' }}>
+                    Voir tout →
+                  </div>
                 )}
               </div>
             ))}
           </div>
         </div>
 
-        {/* RACCOURCIS */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => router.push('/dashboard/reservations')}
-            style={{
-              padding: '10px 16px', background: '#1A1A1A',
-              border: '1px solid #2A2A2A', borderRadius: '10px',
-              color: 'white', fontSize: '13px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '6px'
-            }}
-          >
+          <button onClick={() => router.push('/dashboard/reservations')} style={{
+            padding: '10px 16px',
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '10px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
             📦 Réservations reçues
-            {reservations.length > 0 && (
-              <span style={{
-                background: '#FF5C00', color: 'white',
-                fontSize: '10px', fontWeight: '700',
-                padding: '1px 6px', borderRadius: '10px'
-              }}>
-                {reservations.length}
-              </span>
-            )}
           </button>
-          <button
-            onClick={() => router.push('/messages')}
-            style={{
-              padding: '10px 16px', background: '#1A1A1A',
-              border: '1px solid #2A2A2A', borderRadius: '10px',
-              color: 'white', fontSize: '13px', cursor: 'pointer'
-            }}
-          >
-            💬 Mes messages
+
+          <button onClick={() => router.push('/dashboard/ventes')} style={{
+            padding: '10px 16px',
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '10px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
+            💳 Ventes
+          </button>
+
+          <button onClick={() => router.push('/wallet')} style={{
+            padding: '10px 16px',
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '10px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
+            💰 Portefeuille
+          </button>
+
+          <button onClick={() => router.push('/messages')} style={{
+            padding: '10px 16px',
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '10px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}>
+            💬 Messages
           </button>
         </div>
 
-        {/* MESSAGE */}
         {message && (
           <div style={{
-            padding: '12px 16px', borderRadius: '10px', marginBottom: '20px',
-            background: message.includes('Erreur') || message.includes('Remplis') || message.includes('inférieur')
-              ? 'rgba(255,60,60,0.1)' : 'rgba(0,196,140,0.1)',
-            border: `1px solid ${message.includes('Erreur') || message.includes('Remplis') || message.includes('inférieur')
-              ? '#FF3C3C' : '#00C48C'}`,
-            color: message.includes('Erreur') || message.includes('Remplis') || message.includes('inférieur')
-              ? '#FF3C3C' : '#00C48C',
-            fontSize: '13px'
+            padding: '12px 16px',
+            borderRadius: '10px',
+            marginBottom: '20px',
+            background: message.includes('Erreur') || message.includes('Remplis') || message.includes('refusé') || message.includes('lourd') || message.includes('supérieur') || message.includes('inférieur') || message.includes('introuvable')
+              ? 'rgba(255,60,60,0.1)'
+              : 'rgba(0,196,140,0.1)',
+            border: `1px solid ${
+              message.includes('Erreur') || message.includes('Remplis') || message.includes('refusé') || message.includes('lourd') || message.includes('supérieur') || message.includes('inférieur') || message.includes('introuvable')
+                ? '#FF3C3C'
+                : '#00C48C'
+            }`,
+            color: message.includes('Erreur') || message.includes('Remplis') || message.includes('refusé') || message.includes('lourd') || message.includes('supérieur') || message.includes('inférieur') || message.includes('introuvable')
+              ? '#FF3C3C'
+              : '#00C48C',
+            fontSize: '13px',
           }}>
             {message}
           </div>
         )}
 
-        {/* BOUTON PUBLIER */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <div style={{ fontSize: '16px', fontWeight: '700' }}>Mes promotions</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '12px' }}>
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: '700' }}>Mes promotions</div>
+            <div style={{ fontSize: '12px', color: '#777', marginTop: '4px' }}>
+              Les nouvelles promos doivent être validées par l’admin avant d’être visibles.
+            </div>
+          </div>
+
           <button
-            onClick={() => { setShowForm(!showForm); setMessage('') }}
+            onClick={() => {
+              setShowForm(!showForm)
+              setMessage('')
+            }}
             style={{
-              padding: '10px 20px', background: '#FF5C00',
-              border: 'none', borderRadius: '10px',
-              color: 'white', fontWeight: '700',
-              fontSize: '13px', cursor: 'pointer'
+              padding: '10px 20px',
+              background: '#FF5C00',
+              border: 'none',
+              borderRadius: '10px',
+              color: 'white',
+              fontWeight: '700',
+              fontSize: '13px',
+              cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
-            {showForm ? '✕ Annuler' : '＋ Publier une promo'}
+            {showForm ? '✕ Annuler' : '＋ Publier'}
           </button>
         </div>
 
-        {/* FORMULAIRE */}
         {showForm && (
           <div style={{
-            background: '#1A1A1A', borderRadius: '16px',
-            padding: '24px', border: '1px solid #2A2A2A',
-            marginBottom: '24px'
+            background: '#1A1A1A',
+            borderRadius: '16px',
+            padding: '24px',
+            border: '1px solid #2A2A2A',
+            marginBottom: '24px',
           }}>
             <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px' }}>
               Nouvelle promotion
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px' }}>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Titre de la promo *</label>
+                <label style={labelStyle}>Titre *</label>
                 <input
                   style={inputStyle}
-                  placeholder="Ex: Nike Air Max 270 - Taille 42"
+                  placeholder="Ex : Nike Air Max 270 - Taille 42"
                   value={formData.titre}
                   onChange={e => setFormData({ ...formData, titre: e.target.value })}
                 />
@@ -349,28 +507,32 @@ export default function Dashboard() {
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Description</label>
                 <textarea
-                  style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
-                  placeholder="Décris ton article, l'état, les détails importants..."
+                  style={{ ...inputStyle, minHeight: '90px', resize: 'vertical' }}
+                  placeholder="Décris l'article, son état, les détails importants..."
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                 />
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Photo ou vidéo de l'article</label>
+                <label style={labelStyle}>Photo ou vidéo</label>
+
                 <div
-                  onClick={() => document.getElementById('fileInput').click()}
+                  onClick={() => document.getElementById('fileInputPromo').click()}
                   style={{
-                    border: '2px dashed #333', borderRadius: '12px',
-                    padding: '20px', textAlign: 'center',
-                    cursor: 'pointer', background: '#111',
+                    border: '2px dashed #333',
+                    borderRadius: '12px',
+                    padding: '20px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: '#111',
                   }}
                 >
                   {photoPreview ? (
                     photo?.type.startsWith('video') ? (
-                      <video src={photoPreview} controls style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px' }} />
+                      <video src={photoPreview} controls style={{ maxWidth: '100%', maxHeight: '220px', borderRadius: '8px' }} />
                     ) : (
-                      <img src={photoPreview} alt="preview" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', objectFit: 'cover' }} />
+                      <img src={photoPreview} alt="preview" style={{ maxWidth: '100%', maxHeight: '220px', borderRadius: '8px', objectFit: 'cover' }} />
                     )
                   ) : (
                     <>
@@ -380,57 +542,128 @@ export default function Dashboard() {
                     </>
                   )}
                 </div>
-                <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" style={{ display: 'none' }} onChange={handleMedia} />
+
+                <input
+                  id="fileInputPromo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/mp4"
+                  style={{ display: 'none' }}
+                  onChange={handleMedia}
+                />
+
                 {photoPreview && (
-                  <button onClick={() => { setPhoto(null); setPhotoPreview(null) }} style={{ marginTop: '8px', padding: '6px 12px', background: 'transparent', border: '1px solid #333', borderRadius: '8px', color: '#888', fontSize: '12px', cursor: 'pointer' }}>
-                    ✕ Supprimer
+                  <button
+                    onClick={() => {
+                      setPhoto(null)
+                      setPhotoPreview(null)
+                    }}
+                    style={{
+                      marginTop: '8px',
+                      padding: '6px 12px',
+                      background: 'transparent',
+                      border: '1px solid #333',
+                      borderRadius: '8px',
+                      color: '#888',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ✕ Supprimer le fichier
                   </button>
                 )}
               </div>
 
               <div>
                 <label style={labelStyle}>Catégorie</label>
-                <select style={{ ...inputStyle, cursor: 'pointer' }} value={formData.categorie} onChange={e => setFormData({ ...formData, categorie: e.target.value })}>
-                  {categories.map(cat => (<option key={cat} value={cat} style={{ background: '#111' }}>{cat}</option>))}
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={formData.categorie}
+                  onChange={e => setFormData({ ...formData, categorie: e.target.value })}
+                >
+                  {categories.map(cat => (
+                    <option key={cat} value={cat} style={{ background: '#111' }}>
+                      {cat}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div>
-                <label style={labelStyle}>Stock disponible</label>
-                <input style={inputStyle} type="number" min="1" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
+                <label style={labelStyle}>Stock *</label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="1"
+                  value={formData.stock}
+                  onChange={e => setFormData({ ...formData, stock: e.target.value })}
+                />
               </div>
 
               <div>
-                <label style={labelStyle}>Prix original (FCFA) *</label>
-                <input style={inputStyle} type="number" placeholder="58000" value={formData.prix_original} onChange={e => setFormData({ ...formData, prix_original: e.target.value })} />
+                <label style={labelStyle}>Prix original FCFA *</label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  placeholder="58000"
+                  value={formData.prix_original}
+                  onChange={e => setFormData({ ...formData, prix_original: e.target.value })}
+                />
               </div>
 
               <div>
-                <label style={labelStyle}>Prix promo (FCFA) *</label>
-                <input style={inputStyle} type="number" placeholder="35000" value={formData.prix_promo} onChange={e => setFormData({ ...formData, prix_promo: e.target.value })} />
+                <label style={labelStyle}>Prix promo FCFA *</label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  placeholder="35000"
+                  value={formData.prix_promo}
+                  onChange={e => setFormData({ ...formData, prix_promo: e.target.value })}
+                />
               </div>
 
               {formData.prix_original && formData.prix_promo && Number(formData.prix_promo) < Number(formData.prix_original) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <div style={{ background: 'rgba(255,92,0,0.1)', border: '1px solid rgba(255,92,0,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#FF5C00' }}>
-                    🔥 Réduction de {reduction(formData.prix_original, formData.prix_promo)}% — Acompte client : {Math.round(formData.prix_promo * 0.2).toLocaleString()} FCFA
+                  <div style={{
+                    background: 'rgba(255,92,0,0.1)',
+                    border: '1px solid rgba(255,92,0,0.2)',
+                    borderRadius: '10px',
+                    padding: '10px 14px',
+                    fontSize: '13px',
+                    color: '#FF5C00',
+                  }}>
+                    🔥 Réduction de {reduction(formData.prix_original, formData.prix_promo)}% — Acompte réservation : {formatMoney(Number(formData.prix_promo) * 0.2)} FCFA
                   </div>
                 </div>
               )}
 
               <div>
                 <label style={labelStyle}>Pays</label>
-                <input style={inputStyle} placeholder="Ex: Bénin" value={formData.pays} onChange={e => setFormData({ ...formData, pays: e.target.value })} />
+                <input
+                  style={inputStyle}
+                  placeholder="Ex : Bénin"
+                  value={formData.pays}
+                  onChange={e => setFormData({ ...formData, pays: e.target.value })}
+                />
               </div>
 
               <div>
                 <label style={labelStyle}>Ville</label>
-                <input style={inputStyle} placeholder="Ex: Cotonou" value={formData.ville} onChange={e => setFormData({ ...formData, ville: e.target.value })} />
+                <input
+                  style={inputStyle}
+                  placeholder="Ex : Cotonou"
+                  value={formData.ville}
+                  onChange={e => setFormData({ ...formData, ville: e.target.value })}
+                />
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Date d'expiration (optionnel)</label>
-                <input style={inputStyle} type="date" value={formData.date_expiration} onChange={e => setFormData({ ...formData, date_expiration: e.target.value })} />
+                <label style={labelStyle}>Date d’expiration</label>
+                <input
+                  style={inputStyle}
+                  type="date"
+                  value={formData.date_expiration}
+                  onChange={e => setFormData({ ...formData, date_expiration: e.target.value })}
+                />
               </div>
             </div>
 
@@ -438,36 +671,72 @@ export default function Dashboard() {
               onClick={handlePublier}
               disabled={uploadingPhoto}
               style={{
-                width: '100%', padding: '14px',
+                width: '100%',
+                padding: '14px',
                 background: uploadingPhoto ? '#333' : '#FF5C00',
-                border: 'none', borderRadius: '12px',
-                color: 'white', fontWeight: '700',
-                fontSize: '14px', cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
-                marginTop: '20px'
+                border: 'none',
+                borderRadius: '12px',
+                color: 'white',
+                fontWeight: '700',
+                fontSize: '14px',
+                cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                marginTop: '20px',
               }}
             >
-              {uploadingPhoto ? '⏳ Upload en cours...' : 'Soumettre pour validation'}
+              {uploadingPhoto ? '⏳ Publication en cours...' : 'Soumettre pour validation'}
             </button>
           </div>
         )}
 
-        {/* LISTE DES PROMOS */}
         {loading ? (
-          <div style={{ textAlign: 'center', color: '#888', padding: '40px' }}>Chargement...</div>
+          <div style={{ textAlign: 'center', color: '#888', padding: '40px' }}>
+            Chargement...
+          </div>
         ) : promotions.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#888', padding: '60px 20px', background: '#1A1A1A', borderRadius: '16px', border: '1px solid #2A2A2A' }}>
+          <div style={{
+            textAlign: 'center',
+            color: '#888',
+            padding: '60px 20px',
+            background: '#1A1A1A',
+            borderRadius: '16px',
+            border: '1px solid #2A2A2A',
+          }}>
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏷️</div>
-            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>Aucune promo publiée</div>
-            <div style={{ fontSize: '13px' }}>Clique sur "Publier une promo" pour commencer</div>
+            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>
+              Aucune promo publiée
+            </div>
+            <div style={{ fontSize: '13px' }}>
+              Clique sur “Publier” pour commencer.
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {promotions.map(promo => (
-              <div key={promo.id} style={{ background: '#1A1A1A', borderRadius: '14px', border: '1px solid #2A2A2A', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px' }}>
-                  <div style={{ width: '56px', height: '56px', background: '#252525', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div key={promo.id} style={{
+                background: '#1A1A1A',
+                borderRadius: '14px',
+                border: '1px solid #2A2A2A',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '16px',
+                }}>
+                  <div style={{
+                    width: '60px',
+                    height: '60px',
+                    background: '#252525',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
                     {promo.photo_url ? (
-                      promo.photo_url.includes('.mp4') ? (
+                      promo.media_type === 'video' || promo.photo_url.includes('.mp4') ? (
                         <video src={promo.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
                         <img src={promo.photo_url} alt={promo.titre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -476,20 +745,73 @@ export default function Dashboard() {
                       <span style={{ fontSize: '22px' }}>🏷️</span>
                     )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{promo.titre}</div>
-                    <div style={{ fontSize: '12px', color: '#888' }}>
-                      {promo.prix_promo.toLocaleString()} FCFA
-                      <span style={{ textDecoration: 'line-through', marginLeft: '8px', color: '#555' }}>{promo.prix_original.toLocaleString()} FCFA</span>
-                      <span style={{ marginLeft: '8px', color: '#FF5C00' }}>-{reduction(promo.prix_original, promo.prix_promo)}%</span>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                      {promo.titre}
                     </div>
+
+                    <div style={{ fontSize: '12px', color: '#888' }}>
+                      {formatMoney(promo.prix_promo)} FCFA
+                      <span style={{ textDecoration: 'line-through', marginLeft: '8px', color: '#555' }}>
+                        {formatMoney(promo.prix_original)} FCFA
+                      </span>
+                      <span style={{ marginLeft: '8px', color: '#FF5C00' }}>
+                        -{reduction(promo.prix_original, promo.prix_promo)}%
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                      Stock : {promo.stock} · Catégorie : {promo.categorie}
+                    </div>
+
                     {(promo.ville || promo.pays) && (
-                      <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>📍 {[promo.ville, promo.pays].filter(Boolean).join(', ')}</div>
+                      <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
+                        📍 {[promo.ville, promo.pays].filter(Boolean).join(', ')}
+                      </div>
                     )}
                   </div>
-                  <div style={{ padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '600', background: statutColor(promo.statut).bg, color: statutColor(promo.statut).color, flexShrink: 0 }}>
+
+                  <div style={{
+                    padding: '4px 10px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    background: statutColor(promo.statut).bg,
+                    color: statutColor(promo.statut).color,
+                    flexShrink: 0,
+                  }}>
                     {statutLabel(promo.statut)}
                   </div>
+                </div>
+
+                <div style={{
+                  borderTop: '1px solid #252525',
+                  padding: '10px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                }}>
+                  <div style={{ fontSize: '11px', color: '#666' }}>
+                    Créée le {promo.created_at ? new Date(promo.created_at).toLocaleDateString('fr-FR') : '-'}
+                  </div>
+
+                  <button
+                    onClick={() => router.push(`/promo/${promo.id}`)}
+                    style={{
+                      padding: '7px 12px',
+                      background: '#111',
+                      border: '1px solid #333',
+                      borderRadius: '8px',
+                      color: '#FF5C00',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Voir la promo →
+                  </button>
                 </div>
               </div>
             ))}
