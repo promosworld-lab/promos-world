@@ -10,20 +10,16 @@ export default function Reserver() {
 
   const [promo, setPromo] = useState(null)
   const [user, setUser] = useState(null)
+  const [wallet, setWallet] = useState(null)
+
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
-  const [methodePaiement, setMethodePaiement] = useState('orange')
+
   const [etape, setEtape] = useState(1)
   const [reservation, setReservation] = useState(null)
-  const [message, setMessage] = useState('')
 
-  const methodes = [
-    { id: 'orange', label: 'Orange Money', icon: '📱' },
-    { id: 'mtn', label: 'MTN Mobile Money', icon: '📲' },
-    { id: 'wave', label: 'Wave', icon: '🌊' },
-    { id: 'moov', label: 'Moov Money', icon: '💜' },
-    { id: 'carte', label: 'Carte bancaire', icon: '💳' },
-  ]
+  const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('error')
 
   useEffect(() => {
     initPage()
@@ -31,27 +27,100 @@ export default function Reserver() {
 
   const initPage = async () => {
     setLoading(true)
+    setMessage('')
 
-    const { data: authData } = await supabase.auth.getUser()
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser()
 
-    if (!authData.user) {
+    if (authError || !authData.user) {
       router.push('/auth')
       return
     }
 
     setUser(authData.user)
 
-    const { data, error } = await supabase
+    const { data: promoData, error: promoError } = await supabase
       .from('promotions')
       .select('*, profiles(nom, adresse)')
       .eq('id', id)
       .single()
 
-    if (!error) {
-      setPromo(data)
+    if (promoError) {
+      console.error('Erreur promotion:', promoError)
+      setMessage('Impossible de charger cette promotion.')
+      setLoading(false)
+      return
     }
 
+    setPromo(promoData)
+
+    const { data: walletData, error: walletError } =
+      await supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .single()
+
+    if (walletError) {
+      console.error('Erreur wallet:', walletError)
+
+      setMessage(
+        'Impossible de récupérer ton portefeuille.'
+      )
+
+      setLoading(false)
+      return
+    }
+
+    setWallet(walletData)
+
     setLoading(false)
+  }
+
+  const refreshWallet = async () => {
+    if (!user) return
+
+    const { data, error } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!error && data) {
+      setWallet(data)
+    }
+  }
+
+  const handleContinue = () => {
+    setMessage('')
+
+    if (!promo) return
+
+    if (promo.statut !== 'actif') {
+      setMessage('Cette promotion n’est pas active.')
+      return
+    }
+
+    if (Number(promo.stock) <= 0) {
+      setMessage('Stock épuisé.')
+      return
+    }
+
+    if (!wallet) {
+      setMessage('Portefeuille introuvable.')
+      return
+    }
+
+    const acompte = Math.round(Number(promo.prix_promo) * 0.2)
+
+    if (Number(wallet.solde_disponible) < acompte) {
+      setMessage(
+        `Solde insuffisant. Il faut ${formatMoney(acompte)} FCFA pour réserver, mais ton solde est de ${formatMoney(wallet.solde_disponible)} FCFA.`
+      )
+      return
+    }
+
+    setEtape(2)
   }
 
   const handleReserver = async () => {
@@ -60,75 +129,85 @@ export default function Reserver() {
     setProcessing(true)
     setMessage('')
 
-    if (promo.statut !== 'actif') {
-      setMessage('Cette promo n’est pas active.')
+    const { data, error } = await supabase.rpc(
+      'create_reservation_from_wallet',
+      {
+        p_promotion_id: promo.id,
+      }
+    )
+
+    if (error) {
+      console.error('Erreur réservation:', error)
+
+      setMessage(error.message)
+      setMessageType('error')
+
+      await refreshWallet()
+
       setProcessing(false)
       return
     }
 
-    if (Number(promo.stock) <= 0) {
-      setMessage('Stock épuisé.')
+    if (!data?.success) {
+      setMessage(
+        'La réservation n’a pas pu être effectuée.'
+      )
+
       setProcessing(false)
       return
     }
 
-    const acompte = Math.round(Number(promo.prix_promo) * 0.2)
-    const restant = Number(promo.prix_promo) - acompte
-    const commission = Math.round(Number(promo.prix_promo) * 0.02)
-
-    const dateExpiration = new Date()
-    dateExpiration.setMonth(dateExpiration.getMonth() + 3)
-
-    const { data: reservationData, error: reservationError } = await supabase
-      .from('reservations')
-      .insert({
-        client_id: user.id,
-        promotion_id: promo.id,
-        montant_acompte: acompte,
-        montant_restant: restant,
-        statut: 'acompte_paye',
-        methode_paiement: methodePaiement,
-        client_confirme: false,
-        vendeur_confirme: false,
-        date_expiration: dateExpiration.toISOString(),
-      })
-      .select()
-      .single()
+    const { data: reservationData, error: reservationError } =
+      await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', data.reservation_id)
+        .single()
 
     if (reservationError) {
-      setMessage(`Erreur réservation : ${reservationError.message}`)
-      setProcessing(false)
-      return
+      console.error(
+        'Erreur récupération réservation:',
+        reservationError
+      )
     }
 
-    await supabase.from('transactions').insert({
-      type: 'reservation',
-      client_id: user.id,
-      vendeur_id: promo.vendeur_id,
-      promotion_id: promo.id,
-      reservation_id: reservationData.id,
-      montant_total: Number(promo.prix_promo),
-      montant_paye: acompte,
-      commission_plateforme: commission,
-      methode_paiement: methodePaiement,
-      statut: 'bloque',
-    })
+    setReservation(
+      reservationData || {
+        id: data.reservation_id,
+        date_expiration: data.date_expiration,
+      }
+    )
 
-    await supabase
-      .from('promotions')
-      .update({ stock: Number(promo.stock) - 1 })
-      .eq('id', promo.id)
+    setWallet((current) => ({
+      ...current,
+      solde_disponible: data.solde_apres,
+      solde_bloque: data.fonds_bloques,
+    }))
 
-    setReservation(reservationData)
+    setMessageType('success')
+    setMessage('Réservation effectuée avec succès.')
+
     setEtape(3)
     setProcessing(false)
   }
 
-  const formatMoney = (value) => Number(value || 0).toLocaleString('fr-FR')
+  const formatMoney = (value) => {
+    return Number(value || 0).toLocaleString('fr-FR')
+  }
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0A0A0A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontFamily: 'sans-serif' }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0A0A0A',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#888',
+          fontFamily: 'sans-serif',
+        }}
+      >
         Chargement...
       </div>
     )
@@ -136,7 +215,17 @@ export default function Reserver() {
 
   if (!promo) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0A0A0A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontFamily: 'sans-serif' }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0A0A0A',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#888',
+          fontFamily: 'sans-serif',
+        }}
+      >
         Promotion introuvable.
       </div>
     )
@@ -145,23 +234,44 @@ export default function Reserver() {
   const acompte = Math.round(Number(promo.prix_promo) * 0.2)
   const restant = Number(promo.prix_promo) - acompte
 
+  const soldeDisponible = Number(
+    wallet?.solde_disponible || 0
+  )
+
+  const soldeSuffisant = soldeDisponible >= acompte
+
   return (
-    <div style={{ minHeight: '100vh', background: '#0A0A0A', color: 'white', fontFamily: 'sans-serif' }}>
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
+    <div
+      style={{
+        minHeight: '100vh',
         background: '#0A0A0A',
-        borderBottom: '1px solid #1E1E1E',
-        padding: '14px 20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        zIndex: 100,
-      }}>
+        color: 'white',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      {/* HEADER */}
+
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          background: '#0A0A0A',
+          borderBottom: '1px solid #1E1E1E',
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          zIndex: 100,
+        }}
+      >
         <button
-          onClick={() => (etape === 1 ? router.back() : setEtape(etape - 1))}
+          onClick={() =>
+            etape === 1
+              ? router.back()
+              : setEtape(etape - 1)
+          }
           style={{
             width: '36px',
             height: '36px',
@@ -176,17 +286,42 @@ export default function Reserver() {
           ←
         </button>
 
-        <div style={{ fontSize: '16px', fontWeight: '700' }}>
-          {etape === 3 ? 'Réservation confirmée' : 'Réservation'}
+        <div
+          style={{
+            fontSize: '16px',
+            fontWeight: '700',
+          }}
+        >
+          {etape === 3
+            ? 'Réservation confirmée'
+            : 'Réservation'}
         </div>
       </div>
 
-      <div style={{ paddingTop: '70px', maxWidth: '500px', margin: '0 auto', padding: '80px 20px 40px' }}>
-        {etape < 3 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '28px' }}>
-            {[1, 2, 3].map((s, i) => (
-              <Fragment key={s}>
-                <div style={{
+      {/* CONTENT */}
+
+      <div
+        style={{
+          paddingTop: '70px',
+          maxWidth: '500px',
+          margin: '0 auto',
+          padding: '80px 20px 40px',
+        }}
+      >
+        {/* STEPS */}
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '28px',
+          }}
+        >
+          {[1, 2, 3].map((s, i) => (
+            <Fragment key={s}>
+              <div
+                style={{
                   width: '28px',
                   height: '28px',
                   borderRadius: '50%',
@@ -195,210 +330,492 @@ export default function Reserver() {
                   justifyContent: 'center',
                   fontSize: '11px',
                   fontWeight: '700',
-                  background: etape >= s ? '#FF5C00' : '#1A1A1A',
-                  border: etape >= s ? 'none' : '1px solid #333',
-                  color: etape >= s ? 'white' : '#888',
+                  background:
+                    etape >= s
+                      ? '#FF5C00'
+                      : '#1A1A1A',
+                  border:
+                    etape >= s
+                      ? 'none'
+                      : '1px solid #333',
+                  color:
+                    etape >= s
+                      ? 'white'
+                      : '#888',
                   flexShrink: 0,
-                }}>
-                  {s}
-                </div>
+                }}
+              >
+                {s}
+              </div>
 
-                {i < 2 && (
-                  <div style={{ flex: 1, height: '1px', background: etape > s ? '#FF5C00' : '#333' }} />
-                )}
-              </Fragment>
-            ))}
+              {i < 2 && (
+                <div
+                  style={{
+                    flex: 1,
+                    height: '1px',
+                    background:
+                      etape > s
+                        ? '#FF5C00'
+                        : '#333',
+                  }}
+                />
+              )}
+            </Fragment>
+          ))}
+        </div>
+
+        {/* PROMOTION */}
+
+        <div
+          style={{
+            background: '#1A1A1A',
+            borderRadius: '16px',
+            padding: '16px',
+            border: '1px solid #2A2A2A',
+            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              background: '#252525',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              overflow: 'hidden',
+            }}
+          >
+            {promo.photo_url ? (
+              promo.media_type === 'video' ||
+              promo.photo_url.includes('.mp4') ? (
+                <video
+                  src={promo.photo_url}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                />
+              ) : (
+                <img
+                  src={promo.photo_url}
+                  alt={promo.titre}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                />
+              )
+            ) : (
+              '🏷️'
+            )}
           </div>
-        )}
+
+          <div>
+            <div
+              style={{
+                fontSize: '14px',
+                fontWeight: '600',
+                marginBottom: '3px',
+              }}
+            >
+              {promo.titre}
+            </div>
+
+            <div
+              style={{
+                fontSize: '12px',
+                color: '#888',
+              }}
+            >
+              {promo.profiles?.nom} ·{' '}
+              {promo.profiles?.adresse ||
+                'Adresse non précisée'}
+            </div>
+          </div>
+        </div>
+
+        {/* ÉTAPE 1 */}
 
         {etape === 1 && (
           <>
-            <div style={{
-              background: '#1A1A1A',
-              borderRadius: '16px',
-              padding: '16px',
-              border: '1px solid #2A2A2A',
-              marginBottom: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                background: '#252525',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '24px',
-                overflow: 'hidden',
-              }}>
-                {promo.photo_url ? (
-                  promo.media_type === 'video' || promo.photo_url.includes('.mp4') ? (
-                    <video src={promo.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <img src={promo.photo_url} alt={promo.titre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  )
-                ) : '🏷️'}
+            <div
+              style={{
+                fontSize: '15px',
+                fontWeight: '800',
+                marginBottom: '12px',
+              }}
+            >
+              💰 Paiement par portefeuille
+            </div>
+
+            <div
+              style={{
+                background:
+                  soldeSuffisant
+                    ? '#102A18'
+                    : '#2A1111',
+                border:
+                  soldeSuffisant
+                    ? '1px solid #1F6B38'
+                    : '1px solid #6B2020',
+                borderRadius: '16px',
+                padding: '18px',
+                marginBottom: '16px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#888',
+                  marginBottom: '6px',
+                }}
+              >
+                Solde disponible
               </div>
 
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '3px' }}>
-                  {promo.titre}
-                </div>
+              <div
+                style={{
+                  fontSize: '26px',
+                  fontWeight: '900',
+                  marginBottom: '10px',
+                }}
+              >
+                {formatMoney(soldeDisponible)} FCFA
+              </div>
 
-                <div style={{ fontSize: '12px', color: '#888' }}>
-                  {promo.profiles?.nom} · {promo.profiles?.adresse || 'Adresse non précisée'}
-                </div>
+              <div
+                style={{
+                  fontSize: '13px',
+                  color: soldeSuffisant
+                    ? '#6EE7A0'
+                    : '#FF8A8A',
+                  fontWeight: '700',
+                }}
+              >
+                {soldeSuffisant
+                  ? '✓ Ton solde couvre l’acompte.'
+                  : `✕ Il manque ${formatMoney(
+                      acompte - soldeDisponible
+                    )} FCFA.`}
               </div>
             </div>
 
-            <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px' }}>
-              Mode de paiement
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-              {methodes.map(m => (
+            <div
+              style={{
+                background: '#1A1A1A',
+                borderRadius: '14px',
+                padding: '14px',
+                border: '1px solid #2A2A2A',
+                marginBottom: '20px',
+              }}
+            >
+              {[
+                {
+                  label: 'Prix total',
+                  value: `${formatMoney(
+                    promo.prix_promo
+                  )} FCFA`,
+                },
+                {
+                  label: 'Acompte à bloquer (20%)',
+                  value: `${formatMoney(
+                    acompte
+                  )} FCFA`,
+                  color: '#FF5C00',
+                },
+                {
+                  label: 'Reste à payer plus tard',
+                  value: `${formatMoney(
+                    restant
+                  )} FCFA`,
+                },
+                {
+                  label: 'Validité',
+                  value: '3 mois',
+                },
+              ].map((item, i) => (
                 <div
-                  key={m.id}
-                  onClick={() => setMethodePaiement(m.id)}
+                  key={i}
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    border: methodePaiement === m.id ? '1px solid #FF5C00' : '1px solid #2A2A2A',
-                    background: methodePaiement === m.id ? 'rgba(255,92,0,0.08)' : '#1A1A1A',
-                    cursor: 'pointer',
+                    justifyContent:
+                      'space-between',
+                    marginBottom:
+                      i < 3 ? '8px' : '0',
+                    fontSize: '13px',
                   }}
                 >
-                  <div style={{ width: '32px', height: '32px', background: '#252525', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
-                    {m.icon}
-                  </div>
+                  <span
+                    style={{
+                      color: '#888',
+                    }}
+                  >
+                    {item.label}
+                  </span>
 
-                  <div style={{ flex: 1, fontSize: '13px', fontWeight: '500' }}>
-                    {m.label}
-                  </div>
-
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    border: methodePaiement === m.id ? '2px solid #FF5C00' : '2px solid #444',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '9px',
-                    color: '#FF5C00',
-                  }}>
-                    {methodePaiement === m.id ? '●' : ''}
-                  </div>
+                  <span
+                    style={{
+                      fontWeight: '700',
+                      color:
+                        item.color || 'white',
+                    }}
+                  >
+                    {item.value}
+                  </span>
                 </div>
               ))}
             </div>
 
-            <div style={{
-              background: '#1A1A1A',
-              borderRadius: '14px',
-              padding: '14px',
-              border: '1px solid #2A2A2A',
-              marginBottom: '20px',
-            }}>
-              {[
-                { label: 'Prix total', value: `${formatMoney(promo.prix_promo)} FCFA` },
-                { label: 'Acompte à bloquer (20%)', value: `${formatMoney(acompte)} FCFA`, color: '#FF5C00' },
-                { label: 'Reste à payer plus tard', value: `${formatMoney(restant)} FCFA` },
-                { label: 'Validité', value: '3 mois' },
-              ].map((item, i) => (
-                <div key={i} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: i < 3 ? '8px' : '0',
+            {!soldeSuffisant && (
+              <div
+                style={{
+                  background:
+                    'rgba(255,60,60,0.08)',
+                  border:
+                    '1px solid rgba(255,60,60,0.25)',
+                  borderRadius: '12px',
+                  padding: '13px',
+                  marginBottom: '16px',
+                  fontSize: '12px',
+                  color: '#FF8A8A',
+                  lineHeight: '1.5',
+                }}
+              >
+                Ton portefeuille contient{' '}
+                <strong>
+                  {formatMoney(
+                    soldeDisponible
+                  )}{' '}
+                  FCFA
+                </strong>
+                , mais cette réservation
+                nécessite{' '}
+                <strong>
+                  {formatMoney(acompte)} FCFA
+                </strong>
+                .
+                <br />
+                Tu dois d’abord recharger ton
+                portefeuille.
+              </div>
+            )}
+
+            {message && (
+              <div
+                style={{
+                  padding: '12px',
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  background:
+                    messageType === 'success'
+                      ? 'rgba(0,196,140,0.1)'
+                      : 'rgba(255,60,60,0.1)',
+                  border:
+                    messageType === 'success'
+                      ? '1px solid #00C48C'
+                      : '1px solid #FF3C3C',
+                  color:
+                    messageType === 'success'
+                      ? '#00C48C'
+                      : '#FF8A8A',
                   fontSize: '13px',
-                }}>
-                  <span style={{ color: '#888' }}>{item.label}</span>
-                  <span style={{ fontWeight: '700', color: item.color || 'white' }}>{item.value}</span>
-                </div>
-              ))}
-            </div>
+                }}
+              >
+                {message}
+              </div>
+            )}
 
             <button
-              onClick={() => setEtape(2)}
+              onClick={handleContinue}
+              disabled={!soldeSuffisant}
               style={{
                 width: '100%',
                 padding: '15px',
-                background: '#FF5C00',
+                background:
+                  soldeSuffisant
+                    ? '#FF5C00'
+                    : '#333',
                 border: 'none',
                 borderRadius: '14px',
-                color: 'white',
+                color:
+                  soldeSuffisant
+                    ? 'white'
+                    : '#777',
                 fontWeight: '700',
                 fontSize: '14px',
-                cursor: 'pointer',
+                cursor:
+                  soldeSuffisant
+                    ? 'pointer'
+                    : 'not-allowed',
               }}
             >
-              Continuer →
+              {soldeSuffisant
+                ? 'Continuer →'
+                : 'Solde insuffisant'}
             </button>
+
+            {!soldeSuffisant && (
+              <button
+                onClick={() =>
+                  router.push('/wallet')
+                }
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  background: 'transparent',
+                  border:
+                    '1px solid #2A2A2A',
+                  borderRadius: '14px',
+                  color: 'white',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  marginTop: '10px',
+                }}
+              >
+                💰 Aller au portefeuille
+              </button>
+            )}
           </>
         )}
 
+        {/* ÉTAPE 2 */}
+
         {etape === 2 && (
           <>
-            <div style={{
-              background: '#1A1A1A',
-              borderRadius: '16px',
-              padding: '20px',
-              border: '1px solid #2A2A2A',
-              marginBottom: '20px',
-            }}>
-              <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px' }}>
+            <div
+              style={{
+                background: '#1A1A1A',
+                borderRadius: '16px',
+                padding: '20px',
+                border: '1px solid #2A2A2A',
+                marginBottom: '20px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  marginBottom: '16px',
+                }}
+              >
                 Récapitulatif
               </div>
 
               {[
-                { label: 'Article', value: promo.titre },
-                { label: 'Vendeur', value: promo.profiles?.nom },
-                { label: 'Mode de paiement', value: methodes.find(m => m.id === methodePaiement)?.label },
-                { label: 'Acompte à payer', value: `${formatMoney(acompte)} FCFA` },
-                { label: 'Réservation valable', value: '3 mois' },
+                {
+                  label: 'Article',
+                  value: promo.titre,
+                },
+                {
+                  label: 'Vendeur',
+                  value:
+                    promo.profiles?.nom,
+                },
+                {
+                  label: 'Paiement',
+                  value:
+                    'Portefeuille Promo’s World',
+                },
+                {
+                  label: 'Solde actuel',
+                  value: `${formatMoney(
+                    soldeDisponible
+                  )} FCFA`,
+                },
+                {
+                  label: 'Acompte à bloquer',
+                  value: `${formatMoney(
+                    acompte
+                  )} FCFA`,
+                },
+                {
+                  label: 'Reste à payer',
+                  value: `${formatMoney(
+                    restant
+                  )} FCFA`,
+                },
+                {
+                  label: 'Réservation valable',
+                  value: '3 mois',
+                },
               ].map((item, i) => (
-                <div key={i} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '10px',
-                  fontSize: '13px',
-                  gap: '12px',
-                }}>
-                  <span style={{ color: '#888' }}>{item.label}</span>
-                  <span style={{ fontWeight: '600', maxWidth: '55%', textAlign: 'right' }}>{item.value}</span>
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    justifyContent:
+                      'space-between',
+                    marginBottom: '10px',
+                    fontSize: '13px',
+                    gap: '12px',
+                  }}
+                >
+                  <span
+                    style={{
+                      color: '#888',
+                    }}
+                  >
+                    {item.label}
+                  </span>
+
+                  <span
+                    style={{
+                      fontWeight: '600',
+                      maxWidth: '55%',
+                      textAlign: 'right',
+                    }}
+                  >
+                    {item.value}
+                  </span>
                 </div>
               ))}
             </div>
 
-            <div style={{
-              background: 'rgba(255,92,0,0.08)',
-              borderRadius: '12px',
-              padding: '12px 14px',
-              border: '1px solid rgba(255,92,0,0.2)',
-              fontSize: '12px',
-              color: '#888',
-              marginBottom: '20px',
-              lineHeight: '1.6',
-            }}>
-              🔒 En V1, ce bouton simule le paiement. Quand CinetPay sera connecté, il lancera le vrai paiement Mobile Money ou carte.
+            <div
+              style={{
+                background:
+                  'rgba(0,196,140,0.08)',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                border:
+                  '1px solid rgba(0,196,140,0.2)',
+                fontSize: '12px',
+                color: '#888',
+                marginBottom: '20px',
+                lineHeight: '1.6',
+              }}
+            >
+              🔒 Ton acompte sera prélevé de ton
+              portefeuille et placé dans les{' '}
+              <strong style={{ color: '#00C48C' }}>
+                fonds bloqués
+              </strong>{' '}
+              jusqu’à la finalisation de la
+              réservation.
             </div>
 
             {message && (
-              <div style={{
-                padding: '12px',
-                borderRadius: '10px',
-                marginBottom: '16px',
-                background: 'rgba(255,60,60,0.1)',
-                border: '1px solid #FF3C3C',
-                color: '#FF3C3C',
-                fontSize: '13px',
-              }}>
+              <div
+                style={{
+                  padding: '12px',
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  background:
+                    'rgba(255,60,60,0.1)',
+                  border:
+                    '1px solid #FF3C3C',
+                  color: '#FF8A8A',
+                  fontSize: '13px',
+                }}
+              >
                 {message}
               </div>
             )}
@@ -409,17 +826,25 @@ export default function Reserver() {
               style={{
                 width: '100%',
                 padding: '15px',
-                background: processing ? '#333' : '#FF5C00',
+                background: processing
+                  ? '#333'
+                  : '#FF5C00',
                 border: 'none',
                 borderRadius: '14px',
                 color: 'white',
                 fontWeight: '700',
                 fontSize: '14px',
-                cursor: processing ? 'not-allowed' : 'pointer',
+                cursor: processing
+                  ? 'not-allowed'
+                  : 'pointer',
                 marginBottom: '10px',
               }}
             >
-              {processing ? 'Traitement...' : `Confirmer et payer ${formatMoney(acompte)} FCFA`}
+              {processing
+                ? 'Traitement...'
+                : `Confirmer la réservation — ${formatMoney(
+                    acompte
+                  )} FCFA`}
             </button>
 
             <button
@@ -429,11 +854,14 @@ export default function Reserver() {
                 width: '100%',
                 padding: '13px',
                 background: 'transparent',
-                border: '1px solid #2A2A2A',
+                border:
+                  '1px solid #2A2A2A',
                 borderRadius: '14px',
                 color: '#888',
                 fontSize: '13px',
-                cursor: 'pointer',
+                cursor: processing
+                  ? 'not-allowed'
+                  : 'pointer',
               }}
             >
               Modifier
@@ -441,56 +869,184 @@ export default function Reserver() {
           </>
         )}
 
+        {/* ÉTAPE 3 */}
+
         {etape === 3 && reservation && (
           <>
-            <div style={{ textAlign: 'center', padding: '20px 0 28px' }}>
-              <div style={{ fontSize: '60px', marginBottom: '16px' }}>🎉</div>
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '20px 0 28px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '60px',
+                  marginBottom: '16px',
+                }}
+              >
+                🎉
+              </div>
 
-              <div style={{ fontSize: '20px', fontWeight: '800', marginBottom: '8px' }}>
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: '800',
+                  marginBottom: '8px',
+                }}
+              >
                 Réservation confirmée !
               </div>
 
-              <div style={{ fontSize: '13px', color: '#888', lineHeight: '1.6' }}>
-                Ton acompte de <strong style={{ color: '#FF5C00' }}>{formatMoney(acompte)} FCFA</strong> est sécurisé.
+              <div
+                style={{
+                  fontSize: '13px',
+                  color: '#888',
+                  lineHeight: '1.6',
+                }}
+              >
+                Ton acompte de{' '}
+                <strong
+                  style={{
+                    color: '#FF5C00',
+                  }}
+                >
+                  {formatMoney(acompte)} FCFA
+                </strong>{' '}
+                a été prélevé de ton portefeuille
+                et placé dans les fonds bloqués.
                 <br />
-                Tu as 3 mois pour finaliser l’achat.
+                Tu as 3 mois pour finaliser
+                l’achat.
               </div>
             </div>
 
-            <div style={{
-              background: '#1A1A1A',
-              borderRadius: '16px',
-              border: '1px solid #2A2A2A',
-              overflow: 'hidden',
-              marginBottom: '20px',
-            }}>
-              <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
-                <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>ARTICLE</div>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>{promo.titre}</div>
-                <div style={{ fontSize: '12px', color: '#888' }}>{promo.profiles?.nom}</div>
+            <div
+              style={{
+                background: '#1A1A1A',
+                borderRadius: '16px',
+                border:
+                  '1px solid #2A2A2A',
+                overflow: 'hidden',
+                marginBottom: '20px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '16px',
+                  borderBottom:
+                    '1px solid #222',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#888',
+                    marginBottom: '4px',
+                  }}
+                >
+                  ARTICLE
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '600',
+                  }}
+                >
+                  {promo.titre}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#888',
+                  }}
+                >
+                  {promo.profiles?.nom}
+                </div>
               </div>
 
-              <div style={{ padding: '16px' }}>
+              <div
+                style={{
+                  padding: '16px',
+                }}
+              >
                 {[
-                  { label: 'Acompte bloqué', value: `✓ ${formatMoney(acompte)} FCFA`, color: '#00C48C' },
-                  { label: 'Reste à payer', value: `${formatMoney(restant)} FCFA` },
-                  { label: 'Valable jusqu’au', value: new Date(reservation.date_expiration).toLocaleDateString('fr-FR'), color: '#FF5C00' },
+                  {
+                    label: 'Acompte bloqué',
+                    value: `✓ ${formatMoney(
+                      acompte
+                    )} FCFA`,
+                    color: '#00C48C',
+                  },
+                  {
+                    label: 'Nouveau solde disponible',
+                    value: `${formatMoney(
+                      wallet?.solde_disponible
+                    )} FCFA`,
+                  },
+                  {
+                    label: 'Fonds bloqués',
+                    value: `${formatMoney(
+                      wallet?.solde_bloque
+                    )} FCFA`,
+                    color: '#FF5C00',
+                  },
+                  {
+                    label: 'Reste à payer',
+                    value: `${formatMoney(
+                      restant
+                    )} FCFA`,
+                  },
+                  {
+                    label: 'Valable jusqu’au',
+                    value: new Date(
+                      reservation.date_expiration
+                    ).toLocaleDateString(
+                      'fr-FR'
+                    ),
+                    color: '#FF5C00',
+                  },
                 ].map((item, i) => (
-                  <div key={i} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    marginBottom: i < 2 ? '8px' : '0',
-                    fontSize: '13px',
-                  }}>
-                    <span style={{ color: '#888' }}>{item.label}</span>
-                    <span style={{ fontWeight: '700', color: item.color || 'white' }}>{item.value}</span>
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      justifyContent:
+                        'space-between',
+                      marginBottom:
+                        i < 4 ? '8px' : '0',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: '#888',
+                      }}
+                    >
+                      {item.label}
+                    </span>
+
+                    <span
+                      style={{
+                        fontWeight: '700',
+                        color:
+                          item.color ||
+                          'white',
+                      }}
+                    >
+                      {item.value}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
 
             <button
-              onClick={() => router.push('/reservations')}
+              onClick={() =>
+                router.push('/reservations')
+              }
               style={{
                 width: '100%',
                 padding: '14px',
@@ -508,12 +1064,17 @@ export default function Reserver() {
             </button>
 
             <button
-              onClick={() => router.push(`/chat/${promo.vendeur_id}?promo=${id}`)}
+              onClick={() =>
+                router.push(
+                  `/chat/${promo.vendeur_id}?promo=${id}`
+                )
+              }
               style={{
                 width: '100%',
                 padding: '13px',
                 background: '#1A1A1A',
-                border: '1px solid #2A2A2A',
+                border:
+                  '1px solid #2A2A2A',
                 borderRadius: '14px',
                 color: 'white',
                 fontSize: '13px',
