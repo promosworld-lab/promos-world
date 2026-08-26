@@ -1,321 +1,574 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-export default function AuthPage() {
+export default function Auth() {
   const router = useRouter()
-  const [mode, setMode] = useState('connexion')
-  const [role, setRole] = useState('client')
+
+  const [mode, setMode] = useState('login')
+
   const [nom, setNom] = useState('')
-  const [email, setEmail] = useState('')
   const [telephone, setTelephone] = useState('')
-  const [adresse, setAdresse] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  const [role, setRole] = useState('client')
+
+  const [loading, setLoading] = useState(true)
+  const [processing, setProcessing] = useState(false)
+
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
 
-  const handleSubmit = async () => {
-    setLoading(true)
+  useEffect(() => {
+    checkUser()
+  }, [])
+
+  const checkUser = async () => {
+    const { data } = await supabase.auth.getUser()
+
+    if (data?.user) {
+      router.push('/')
+      return
+    }
+
+    setLoading(false)
+  }
+
+  const resetMessages = () => {
     setMessage('')
+    setError('')
+  }
 
-    if (mode === 'inscription') {
-      if (!nom || !email || !password || !adresse) {
-        setMessage('Nom, email, localisation et mot de passe sont obligatoires.')
-        setLoading(false)
-        return
-      }
+  const handleLogin = async () => {
+    resetMessages()
 
-      if (password.length < 6) {
-        setMessage('Le mot de passe doit faire au moins 6 caractères.')
-        setLoading(false)
-        return
-      }
+    if (!email.trim() || !password) {
+      setError('Entre ton adresse email et ton mot de passe.')
+      return
+    }
 
-      const selectedRole = role === 'vendeur' ? 'vendeur' : 'client'
+    setProcessing(true)
 
-      const { data, error } = await supabase.auth.signUp({
+    const { data, error: loginError } =
+      await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+
+    if (loginError) {
+      setError(loginError.message)
+      setProcessing(false)
+      return
+    }
+
+    if (!data?.user) {
+      setError('Connexion impossible.')
+      setProcessing(false)
+      return
+    }
+
+    router.push('/')
+    router.refresh()
+  }
+
+  const handleRegister = async () => {
+    resetMessages()
+
+    if (!nom.trim()) {
+      setError('Entre ton nom.')
+      return
+    }
+
+    if (!email.trim()) {
+      setError('Entre ton adresse email.')
+      return
+    }
+
+    if (!password) {
+      setError('Entre un mot de passe.')
+      return
+    }
+
+    if (password.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères.')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Les deux mots de passe ne correspondent pas.')
+      return
+    }
+
+    setProcessing(true)
+
+    const { data, error: signUpError } =
+      await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
           data: {
             nom: nom.trim(),
-            role: selectedRole,
             telephone: telephone.trim(),
-            adresse: adresse.trim(),
+            role,
           },
         },
       })
 
-      if (error) {
-        setMessage(error.message)
-        setLoading(false)
-        return
-      }
+    if (signUpError) {
+      setError(signUpError.message)
+      setProcessing(false)
+      return
+    }
 
-      if (data.user) {
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          nom: nom.trim(),
-          role: selectedRole,
-          telephone: telephone.trim(),
-          adresse: adresse.trim(),
-        })
+    /*
+      Le trigger Supabase handle_new_user doit créer le profil
+      automatiquement à partir des metadata envoyées ci-dessus.
 
-        await supabase.from('wallets').upsert({
-          user_id: data.user.id,
-          solde_disponible: 0,
-          solde_bloque: 0,
-        })
+      Si la confirmation email est activée dans Supabase,
+      session sera null et l'utilisateur devra confirmer son email.
+    */
 
-        setMessage('success')
-        setTimeout(() => {
-          setMode('connexion')
-          setMessage('')
-          setNom('')
-          setEmail('')
-          setTelephone('')
-          setAdresse('')
-          setPassword('')
-          setRole('client')
-        }, 2000)
-      }
+    if (!data?.session) {
+      setMessage(
+        'Compte créé avec succès. Vérifie ton adresse email pour confirmer ton compte.'
+      )
+      setProcessing(false)
+      return
+    }
+
+    setMessage('Compte créé avec succès. Bienvenue sur Promo’s World !')
+
+    setTimeout(() => {
+      router.push('/')
+      router.refresh()
+    }, 700)
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+
+    if (processing) return
+
+    if (mode === 'login') {
+      await handleLogin()
     } else {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
-    password,
-  })
-
-  if (error) {
-    setMessage(error.message)
-    setLoading(false)
-    return
+      await handleRegister()
+    }
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', data.user.id)
-    .maybeSingle()
-
-  if (profileError) {
-    console.error('Erreur profil :', profileError)
-    setMessage("Impossible de récupérer le rôle du compte.")
-    setLoading(false)
-    return
-  }
-
-  if (!profile) {
-    setMessage("Profil introuvable. Déconnecte-toi puis reconnecte-toi.")
-    setLoading(false)
-    return
-  }
-
-  if (profile.role === 'vendeur') {
-    router.replace('/dashboard')
-  } else if (profile.role === 'admin') {
-    router.replace('/admin')
-  } else {
-    router.replace('/')
-  }
-}
-
-    setLoading(false)
-  }
-
-  const inputStyle = {
-    width: '100%', padding: '12px 14px',
-    background: '#111', border: '1px solid #333',
-    borderRadius: '10px', color: 'white',
-    fontSize: '13px', outline: 'none',
-    boxSizing: 'border-box'
-  }
-
-  const labelStyle = {
-    fontSize: '12px', color: '#888',
-    display: 'block', marginBottom: '6px'
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0A0A0A',
+          color: '#888',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'sans-serif',
+        }}
+      >
+        Chargement...
+      </div>
+    )
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0A0A0A',
-      display: 'flex', alignItems: 'center',
-      justifyContent: 'center', fontFamily: 'sans-serif',
-      padding: '20px'
-    }}>
-      <div style={{
-        width: '100%', maxWidth: '400px',
-        background: '#1A1A1A', borderRadius: '20px',
-        padding: '32px', border: '1px solid #2A2A2A'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{ fontSize: '24px', fontWeight: '800', color: '#FF5C00' }}>
-            Promo's<span style={{ color: 'white' }}>World</span>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#0A0A0A',
+        color: 'white',
+        fontFamily: 'sans-serif',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '430px',
+        }}
+      >
+        {/* LOGO */}
+        <div
+          style={{
+            textAlign: 'center',
+            marginBottom: '28px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '28px',
+              fontWeight: '900',
+              color: '#FF5C00',
+            }}
+          >
+            Promo's
+            <span style={{ color: 'white' }}>World</span>
+          </div>
+
+          <div
+            style={{
+              color: '#777',
+              fontSize: '12px',
+              marginTop: '6px',
+            }}
+          >
+            Marketplace de promotions en Afrique de l'Ouest
           </div>
         </div>
 
-        <div style={{
-          display: 'flex', background: '#111',
-          borderRadius: '10px', padding: '4px',
-          marginBottom: '24px', border: '1px solid #222'
-        }}>
-          {['connexion', 'inscription'].map(m => (
+        {/* CARD */}
+        <div
+          style={{
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '20px',
+            padding: '22px',
+          }}
+        >
+          {/* TABS */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '8px',
+              background: '#111',
+              padding: '5px',
+              borderRadius: '12px',
+              marginBottom: '24px',
+            }}
+          >
             <button
-              key={m}
-              onClick={() => { setMode(m); setMessage('') }}
+              type="button"
+              onClick={() => {
+                setMode('login')
+                resetMessages()
+              }}
               style={{
-                flex: 1, padding: '9px',
-                borderRadius: '7px', border: 'none',
-                background: mode === m ? '#FF5C00' : 'transparent',
-                color: mode === m ? 'white' : '#888',
-                fontWeight: '600', fontSize: '13px',
-                cursor: 'pointer', fontFamily: 'sans-serif'
+                padding: '11px',
+                border: 'none',
+                borderRadius: '9px',
+                background:
+                  mode === 'login' ? '#FF5C00' : 'transparent',
+                color: 'white',
+                fontWeight: '800',
+                cursor: 'pointer',
               }}
             >
-              {m === 'connexion' ? 'Connexion' : 'Inscription'}
+              Connexion
             </button>
-          ))}
-        </div>
 
-        {message === 'success' && (
-          <div style={{
-            padding: '16px', borderRadius: '12px',
-            background: 'rgba(0,196,140,0.1)',
-            border: '1px solid #00C48C',
-            color: '#00C48C', fontSize: '13px',
-            textAlign: 'center', marginBottom: '16px'
-          }}>
-            <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎉</div>
-            <div style={{ fontWeight: '700', marginBottom: '4px' }}>Compte créé !</div>
-            <div style={{ fontSize: '12px', color: '#888' }}>
-              Tu peux maintenant te connecter.
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register')
+                resetMessages()
+              }}
+              style={{
+                padding: '11px',
+                border: 'none',
+                borderRadius: '9px',
+                background:
+                  mode === 'register' ? '#FF5C00' : 'transparent',
+                color: 'white',
+                fontWeight: '800',
+                cursor: 'pointer',
+              }}
+            >
+              Inscription
+            </button>
           </div>
-        )}
 
-        {message !== 'success' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {mode === 'inscription' && (
-              <div>
-                <label style={labelStyle}>Nom complet *</label>
+          <form onSubmit={handleSubmit}>
+            {mode === 'register' && (
+              <>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    marginBottom: '7px',
+                  }}
+                >
+                  Nom
+                </label>
+
                 <input
-                  style={inputStyle}
                   type="text"
-                  placeholder="Ton nom"
                   value={nom}
-                  onChange={e => setNom(e.target.value)}
-                />
-              </div>
-            )}
-
-            <div>
-              <label style={labelStyle}>Email *</label>
-              <input
-                style={inputStyle}
-                type="email"
-                placeholder="ton@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-              />
-            </div>
-
-            {mode === 'inscription' && (
-              <div>
-                <label style={labelStyle}>Téléphone Mobile Money</label>
-                <input
+                  onChange={(e) => setNom(e.target.value)}
+                  placeholder="Ton nom"
+                  autoComplete="name"
                   style={inputStyle}
+                />
+
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    marginBottom: '7px',
+                  }}
+                >
+                  Téléphone
+                  <span
+                    style={{
+                      color: '#666',
+                      fontWeight: '400',
+                    }}
+                  >
+                    {' '}
+                    (facultatif)
+                  </span>
+                </label>
+
+                <input
                   type="tel"
-                  placeholder="+229 XX XX XX XX"
                   value={telephone}
-                  onChange={e => setTelephone(e.target.value)}
-                />
-              </div>
-            )}
-
-            {mode === 'inscription' && (
-              <div>
-                <label style={labelStyle}>Ville / Localisation *</label>
-                <input
+                  onChange={(e) => setTelephone(e.target.value)}
+                  placeholder="Ex : 97000000"
+                  autoComplete="tel"
                   style={inputStyle}
-                  type="text"
-                  placeholder="Ex: Cotonou, Bénin"
-                  value={adresse}
-                  onChange={e => setAdresse(e.target.value)}
                 />
+
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    marginBottom: '7px',
+                  }}
+                >
+                  Type de compte
+                </label>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '8px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setRole('client')}
+                    style={{
+                      padding: '12px',
+                      background:
+                        role === 'client'
+                          ? 'rgba(255,92,0,0.1)'
+                          : '#111',
+                      border:
+                        role === 'client'
+                          ? '1px solid #FF5C00'
+                          : '1px solid #333',
+                      borderRadius: '10px',
+                      color: 'white',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    👤 Client
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRole('vendeur')}
+                    style={{
+                      padding: '12px',
+                      background:
+                        role === 'vendeur'
+                          ? 'rgba(255,92,0,0.1)'
+                          : '#111',
+                      border:
+                        role === 'vendeur'
+                          ? '1px solid #FF5C00'
+                          : '1px solid #333',
+                      borderRadius: '10px',
+                      color: 'white',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🏪 Vendeur
+                  </button>
+                </div>
+              </>
+            )}
+
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: '700',
+                marginBottom: '7px',
+              }}
+            >
+              Email
+            </label>
+
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="exemple@email.com"
+              autoComplete="email"
+              style={inputStyle}
+            />
+
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: '700',
+                marginBottom: '7px',
+              }}
+            >
+              Mot de passe
+            </label>
+
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete={
+                mode === 'login'
+                  ? 'current-password'
+                  : 'new-password'
+              }
+              style={inputStyle}
+            />
+
+            {mode === 'register' && (
+              <>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    marginBottom: '7px',
+                  }}
+                >
+                  Confirmer le mot de passe
+                </label>
+
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) =>
+                    setConfirmPassword(e.target.value)
+                  }
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  style={inputStyle}
+                />
+              </>
+            )}
+
+            {error && (
+              <div
+                style={{
+                  background: 'rgba(255,60,60,0.1)',
+                  border: '1px solid #FF3C3C',
+                  color: '#FF7777',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  marginBottom: '14px',
+                  fontSize: '12px',
+                  lineHeight: '1.5',
+                }}
+              >
+                ⚠️ {error}
               </div>
             )}
 
-            <div>
-              <label style={labelStyle}>Mot de passe *</label>
-              <input
-                style={inputStyle}
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-              />
-              {mode === 'inscription' && (
-                <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
-                  Minimum 6 caractères
-                </div>
-              )}
-            </div>
-
-            {mode === 'inscription' && (
-              <div>
-                <label style={labelStyle}>Je suis... *</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {['client', 'vendeur'].map(r => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      style={{
-                        flex: 1, padding: '10px',
-                        borderRadius: '10px',
-                        border: role === r ? '1px solid #FF5C00' : '1px solid #333',
-                        background: role === r ? 'rgba(255,92,0,0.1)' : '#111',
-                        color: role === r ? '#FF5C00' : '#888',
-                        fontWeight: '600', fontSize: '13px',
-                        cursor: 'pointer', fontFamily: 'sans-serif'
-                      }}
-                    >
-                      {r === 'client' ? '🛍️ Client' : '🏪 Vendeur'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {message && message !== 'success' && (
-              <div style={{
-                padding: '10px 14px', borderRadius: '10px',
-                background: 'rgba(255,60,60,0.1)',
-                border: '1px solid #FF3C3C',
-                color: '#FF3C3C', fontSize: '12px'
-              }}>
-                {message}
+            {message && (
+              <div
+                style={{
+                  background: 'rgba(0,196,140,0.1)',
+                  border: '1px solid #00C48C',
+                  color: '#55E0B2',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  marginBottom: '14px',
+                  fontSize: '12px',
+                  lineHeight: '1.5',
+                }}
+              >
+                ✅ {message}
               </div>
             )}
 
             <button
-              onClick={handleSubmit}
-              disabled={loading}
+              type="submit"
+              disabled={processing}
               style={{
-                width: '100%', padding: '14px',
-                background: loading ? '#333' : '#FF5C00',
-                border: 'none', borderRadius: '12px',
-                color: 'white', fontWeight: '700',
-                fontSize: '14px', cursor: loading ? 'not-allowed' : 'pointer',
-                fontFamily: 'sans-serif'
+                width: '100%',
+                padding: '14px',
+                background: processing ? '#333' : '#FF5C00',
+                border: 'none',
+                borderRadius: '12px',
+                color: 'white',
+                fontWeight: '800',
+                fontSize: '14px',
+                cursor: processing
+                  ? 'not-allowed'
+                  : 'pointer',
+                marginTop: '4px',
               }}
             >
-              {loading ? 'Chargement...' : mode === 'connexion' ? 'Se connecter' : 'Créer mon compte'}
+              {processing
+                ? 'Traitement...'
+                : mode === 'login'
+                  ? 'Se connecter'
+                  : 'Créer mon compte'}
             </button>
-          </div>
-        )}
+          </form>
+
+          {/* RETOUR */}
+          <button
+            type="button"
+            onClick={() => router.push('/')}
+            style={{
+              width: '100%',
+              marginTop: '12px',
+              padding: '12px',
+              background: 'transparent',
+              border: '1px solid #2A2A2A',
+              borderRadius: '12px',
+              color: '#888',
+              fontWeight: '700',
+              cursor: 'pointer',
+            }}
+          >
+            ← Retour à l'accueil
+          </button>
+        </div>
       </div>
     </div>
   )
+}
+
+const inputStyle = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '13px 14px',
+  background: '#111',
+  border: '1px solid #333',
+  borderRadius: '10px',
+  color: 'white',
+  outline: 'none',
+  fontSize: '14px',
+  marginBottom: '16px',
 }

@@ -1,239 +1,718 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
-function AvisContent() {
+export default function Avis() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const reservationId = searchParams.get('reservation')
-  const vendeurId = searchParams.get('vendeur')
 
   const [user, setUser] = useState(null)
-  const [note, setNote] = useState(0)
+  const [avis, setAvis] = useState([])
+  const [reservations, setReservations] = useState([])
+
+  const [reservationId, setReservationId] = useState('')
+  const [note, setNote] = useState(5)
   const [commentaire, setCommentaire] = useState('')
-  const [hover, setHover] = useState(0)
-  const [loading, setLoading] = useState(false)
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
-  const [dejaNote, setDejaNote] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    checkUser()
+    initPage()
   }, [])
 
-  const checkUser = async () => {
-    const { data } = await supabase.auth.getUser()
-    if (!data.user) { router.push('/auth'); return }
-    setUser(data.user)
-    checkDejaNote(data.user.id)
-  }
-
-  const checkDejaNote = async (userId) => {
-    const { data } = await supabase
-      .from('avis')
-      .select('id')
-      .eq('client_id', userId)
-      .eq('reservation_id', reservationId)
-      .single()
-
-    if (data) setDejaNote(true)
-  }
-
-  const handleSubmit = async () => {
-    if (note === 0) {
-      setMessage('Choisis une note entre 1 et 5 étoiles.')
-      return
-    }
-
+  const initPage = async () => {
     setLoading(true)
+    setMessage('')
+    setError('')
 
-    const { error } = await supabase.from('avis').insert({
-      client_id: user.id,
-      vendeur_id: vendeurId,
-      reservation_id: reservationId,
-      note,
-      commentaire: commentaire.trim() || null,
-    })
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser()
 
-    if (error) {
-      setMessage('Erreur lors de la soumission.')
-      setLoading(false)
+    if (authError || !authData.user) {
+      router.push('/auth')
       return
     }
 
-    setMessage('success')
+    setUser(authData.user)
+
+    await Promise.all([
+      loadAvis(authData.user.id),
+      loadReservations(authData.user.id),
+    ])
+
     setLoading(false)
   }
 
-  if (message === 'success' || dejaNote) {
+  const loadAvis = async (userId) => {
+    const { data, error } = await supabase
+      .from('avis')
+      .select(`
+        *,
+        client:profiles!avis_client_id_fkey(nom),
+        vendeur:profiles!avis_vendeur_id_fkey(nom),
+        promotions(titre)
+      `)
+      .or(`client_id.eq.${userId},vendeur_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Erreur chargement avis :', error)
+      return
+    }
+
+    setAvis(data || [])
+  }
+
+  const loadReservations = async (userId) => {
+    /*
+      On récupère uniquement les réservations terminées
+      pour lesquelles l'utilisateur peut laisser un avis.
+
+      Le système accepte :
+      - réservation livrée
+      - réservation terminée
+      - réservation avec réception confirmée
+    */
+
+    const { data, error } = await supabase
+      .from('reservations')
+      .select(`
+        id,
+        client_id,
+        vendeur_id,
+        promotion_id,
+        statut,
+        created_at,
+        promotions(titre),
+        vendeur:profiles!reservations_vendeur_id_fkey(nom)
+      `)
+      .eq('client_id', userId)
+      .in('statut', [
+        'terminee',
+        'termine',
+        'livree',
+        'livre',
+        'reception_confirmee',
+        'conforme'
+      ])
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Erreur chargement réservations pour avis :', error)
+      setReservations([])
+      return
+    }
+
+    /*
+      On récupère également les réservations déjà évaluées
+      afin de ne pas proposer deux fois la même réservation.
+    */
+
+    const { data: existingReviews, error: reviewsError } = await supabase
+      .from('avis')
+      .select('reservation_id')
+      .eq('client_id', userId)
+
+    if (reviewsError) {
+      console.error('Erreur vérification avis :', reviewsError)
+      setReservations(data || [])
+      return
+    }
+
+    const reviewedIds = new Set(
+      (existingReviews || [])
+        .map(item => item.reservation_id)
+        .filter(Boolean)
+    )
+
+    const availableReservations = (data || []).filter(
+      reservation => !reviewedIds.has(reservation.id)
+    )
+
+    setReservations(availableReservations)
+  }
+
+  const handleSubmit = async () => {
+    setMessage('')
+    setError('')
+
+    if (!reservationId) {
+      setError('Choisis une réservation.')
+      return
+    }
+
+    if (!note || note < 1 || note > 5) {
+      setError('La note doit être comprise entre 1 et 5.')
+      return
+    }
+
+    if (!commentaire.trim()) {
+      setError('Écris un commentaire.')
+      return
+    }
+
+    if (commentaire.trim().length < 5) {
+      setError('Le commentaire doit contenir au moins 5 caractères.')
+      return
+    }
+
+    const reservation = reservations.find(
+      item => item.id === reservationId
+    )
+
+    if (!reservation) {
+      setError('Réservation introuvable.')
+      return
+    }
+
+    setSaving(true)
+
+    const { error: insertError } = await supabase
+      .from('avis')
+      .insert({
+        reservation_id: reservation.id,
+        client_id: user.id,
+        vendeur_id: reservation.vendeur_id,
+        promotion_id: reservation.promotion_id,
+        note: Number(note),
+        commentaire: commentaire.trim(),
+      })
+
+    if (insertError) {
+      console.error('Erreur création avis :', insertError)
+
+      if (
+        insertError.code === '23505' ||
+        insertError.message?.toLowerCase().includes('duplicate')
+      ) {
+        setError('Tu as déjà laissé un avis pour cette réservation.')
+      } else {
+        setError(`Erreur lors de l'envoi de l'avis : ${insertError.message}`)
+      }
+
+      setSaving(false)
+      return
+    }
+
+    setMessage('✅ Ton avis a été publié avec succès.')
+
+    setReservationId('')
+    setNote(5)
+    setCommentaire('')
+
+    await Promise.all([
+      loadAvis(user.id),
+      loadReservations(user.id),
+    ])
+
+    setSaving(false)
+  }
+
+  const formatDate = date => {
+    if (!date) return '-'
+
+    return new Date(date).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  }
+
+  const renderStars = value => {
     return (
-      <div style={{
-        minHeight: '100vh', background: '#0A0A0A',
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'center', fontFamily: 'sans-serif',
-        padding: '20px'
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: '400px' }}>
-          <div style={{ fontSize: '60px', marginBottom: '16px' }}>
-            {dejaNote && message !== 'success' ? '✅' : '⭐'}
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '800', color: 'white', marginBottom: '8px' }}>
-            {dejaNote && message !== 'success' ? 'Avis déjà soumis' : 'Merci pour ton avis !'}
-          </div>
-          <div style={{ fontSize: '13px', color: '#888', marginBottom: '24px' }}>
-            {dejaNote && message !== 'success'
-              ? 'Tu as déjà noté ce vendeur pour cette transaction.'
-              : "Ton avis aide la communauté Promo's World."}
-          </div>
-          <button
-            onClick={() => router.push('/')}
+      <div style={{ display: 'flex', gap: '3px' }}>
+        {[1, 2, 3, 4, 5].map(star => (
+          <span
+            key={star}
             style={{
-              padding: '12px 28px', background: '#FF5C00',
-              border: 'none', borderRadius: '12px',
-              color: 'white', fontWeight: '700',
-              fontSize: '14px', cursor: 'pointer'
+              color: star <= value ? '#FFB800' : '#444',
+              fontSize: '18px',
             }}
           >
-            Retour à l'accueil
-          </button>
-        </div>
+            ★
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  const getNoteLabel = value => {
+    const labels = {
+      1: 'Très mauvais',
+      2: 'Mauvais',
+      3: 'Moyen',
+      4: 'Bien',
+      5: 'Excellent',
+    }
+
+    return labels[value] || ''
+  }
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0A0A0A',
+          color: '#888',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'sans-serif',
+        }}
+      >
+        Chargement...
       </div>
     )
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0A0A0A',
-      color: 'white', fontFamily: 'sans-serif',
-      display: 'flex', alignItems: 'center',
-      justifyContent: 'center', padding: '20px'
-    }}>
-      <div style={{
-        width: '100%', maxWidth: '440px',
-        background: '#1A1A1A', borderRadius: '20px',
-        padding: '32px', border: '1px solid #2A2A2A'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{ fontSize: '22px', fontWeight: '800', color: '#FF5C00' }}>
-            Promo's<span style={{ color: 'white' }}>World</span>
-          </div>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#0A0A0A',
+        color: 'white',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      {/* HEADER */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          background: '#0A0A0A',
+          borderBottom: '1px solid #1E1E1E',
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          zIndex: 100,
+        }}
+      >
+        <button
+          onClick={() => router.back()}
+          style={{
+            width: '36px',
+            height: '36px',
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '10px',
+            color: 'white',
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ←
+        </button>
+
+        <div
+          style={{
+            fontSize: '18px',
+            fontWeight: '800',
+            color: '#FF5C00',
+          }}
+        >
+          Promo's<span style={{ color: 'white' }}>World</span>
+        </div>
+      </div>
+
+      {/* CONTENT */}
+      <div
+        style={{
+          padding: '80px 20px 40px',
+          maxWidth: '760px',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '22px',
+            fontWeight: '800',
+            marginBottom: '6px',
+          }}
+        >
+          ⭐ Avis
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{ fontSize: '36px', marginBottom: '10px' }}>⭐</div>
-          <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px' }}>
-            Note ce vendeur
-          </div>
-          <div style={{ fontSize: '13px', color: '#888' }}>
-            Comment s'est passée ta transaction ?
-          </div>
+        <div
+          style={{
+            fontSize: '13px',
+            color: '#888',
+            marginBottom: '24px',
+            lineHeight: '1.5',
+          }}
+        >
+          Évalue les vendeurs et les achats que tu as réellement reçus.
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' }}>
-          {[1, 2, 3, 4, 5].map(s => (
-            <div
-              key={s}
-              onClick={() => setNote(s)}
-              onMouseEnter={() => setHover(s)}
-              onMouseLeave={() => setHover(0)}
-              style={{
-                fontSize: '36px', cursor: 'pointer',
-                transition: 'transform 0.1s',
-                transform: (hover || note) >= s ? 'scale(1.2)' : 'scale(1)',
-                filter: (hover || note) >= s ? 'none' : 'grayscale(100%)'
-              }}
-            >
-              ⭐
-            </div>
-          ))}
-        </div>
-
-        {(hover || note) > 0 && (
-          <div style={{
-            textAlign: 'center', marginBottom: '20px',
-            fontSize: '13px', fontWeight: '600', color: '#FF5C00'
-          }}>
-            {['', 'Très mauvais 😞', 'Mauvais 😕', 'Correct 😐', 'Bien 😊', 'Excellent ! 🔥'][hover || note]}
-          </div>
-        )}
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ fontSize: '12px', color: '#888', display: 'block', marginBottom: '8px' }}>
-            Commentaire (optionnel)
-          </label>
-          <textarea
-            value={commentaire}
-            onChange={e => setCommentaire(e.target.value)}
-            placeholder="Décris ton expérience avec ce vendeur..."
-            rows={4}
+        {/* MESSAGE */}
+        {message && (
+          <div
             style={{
-              width: '100%', padding: '12px 14px',
-              background: '#111', border: '1px solid #333',
-              borderRadius: '10px', color: 'white',
-              fontSize: '13px', outline: 'none',
-              resize: 'none', fontFamily: 'sans-serif',
-              boxSizing: 'border-box'
+              padding: '12px 14px',
+              borderRadius: '12px',
+              marginBottom: '16px',
+              background: 'rgba(0,196,140,0.1)',
+              border: '1px solid #00C48C',
+              color: '#00C48C',
+              fontSize: '13px',
+              fontWeight: '600',
             }}
-          />
-        </div>
-
-        {message && message !== 'success' && (
-          <div style={{
-            padding: '10px 14px', borderRadius: '10px',
-            background: 'rgba(255,60,60,0.1)',
-            border: '1px solid #FF3C3C',
-            color: '#FF3C3C', fontSize: '12px',
-            marginBottom: '16px'
-          }}>
+          >
             {message}
           </div>
         )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{
-            width: '100%', padding: '14px',
-            background: loading ? '#333' : '#FF5C00',
-            border: 'none', borderRadius: '12px',
-            color: 'white', fontWeight: '700',
-            fontSize: '14px', cursor: loading ? 'not-allowed' : 'pointer',
-            marginBottom: '10px'
-          }}
-        >
-          {loading ? 'Envoi...' : 'Soumettre mon avis'}
-        </button>
+        {/* ERREUR */}
+        {error && (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: '12px',
+              marginBottom: '16px',
+              background: 'rgba(255,60,60,0.1)',
+              border: '1px solid #FF3C3C',
+              color: '#FF3C3C',
+              fontSize: '13px',
+              fontWeight: '600',
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-        <button
-          onClick={() => router.push('/')}
+        {/* FORMULAIRE */}
+        <div
           style={{
-            width: '100%', padding: '12px',
-            background: 'transparent', border: '1px solid #2A2A2A',
-            borderRadius: '12px', color: '#888',
-            fontSize: '13px', cursor: 'pointer'
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '16px',
+            padding: '18px',
+            marginBottom: '24px',
           }}
         >
-          Passer
-        </button>
+          <div
+            style={{
+              fontSize: '16px',
+              fontWeight: '800',
+              marginBottom: '14px',
+            }}
+          >
+            Laisser un avis
+          </div>
+
+          {reservations.length === 0 ? (
+            <div
+              style={{
+                background: '#111',
+                border: '1px solid #252525',
+                borderRadius: '12px',
+                padding: '18px',
+                color: '#888',
+                fontSize: '13px',
+                lineHeight: '1.5',
+              }}
+            >
+              Tu n'as actuellement aucune réservation terminée pouvant être
+              évaluée.
+            </div>
+          ) : (
+            <>
+              {/* RESERVATION */}
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: '#888',
+                  marginBottom: '7px',
+                }}
+              >
+                Réservation
+              </label>
+
+              <select
+                value={reservationId}
+                onChange={e => setReservationId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  background: '#111',
+                  border: '1px solid #333',
+                  borderRadius: '10px',
+                  color: 'white',
+                  marginBottom: '18px',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                }}
+              >
+                <option value="">
+                  Choisir une réservation
+                </option>
+
+                {reservations.map(reservation => (
+                  <option
+                    key={reservation.id}
+                    value={reservation.id}
+                  >
+                    {reservation.promotions?.titre || 'Article'} —{' '}
+                    {reservation.vendeur?.nom || 'Vendeur'}
+                  </option>
+                ))}
+              </select>
+
+              {/* NOTE */}
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: '#888',
+                  marginBottom: '7px',
+                }}
+              >
+                Note
+              </label>
+
+              <div
+                style={{
+                  background: '#111',
+                  border: '1px solid #333',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  marginBottom: '18px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '5px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setNote(star)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '0',
+                        cursor: 'pointer',
+                        fontSize: '28px',
+                        color: star <= note ? '#FFB800' : '#444',
+                      }}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#888',
+                  }}
+                >
+                  {getNoteLabel(note)}
+                </div>
+              </div>
+
+              {/* COMMENTAIRE */}
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: '#888',
+                  marginBottom: '7px',
+                }}
+              >
+                Commentaire
+              </label>
+
+              <textarea
+                value={commentaire}
+                onChange={e => setCommentaire(e.target.value)}
+                placeholder="Partage ton expérience avec ce vendeur..."
+                rows={5}
+                maxLength={1000}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  background: '#111',
+                  border: '1px solid #333',
+                  borderRadius: '10px',
+                  color: 'white',
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  fontFamily: 'sans-serif',
+                  marginBottom: '8px',
+                }}
+              />
+
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: '#666',
+                  textAlign: 'right',
+                  marginBottom: '14px',
+                }}
+              >
+                {commentaire.length}/1000
+              </div>
+
+              <button
+                onClick={handleSubmit}
+                disabled={saving}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: saving ? '#333' : '#FF5C00',
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontWeight: '800',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {saving ? 'Publication...' : '⭐ Publier mon avis'}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* LISTE DES AVIS */}
+        <div
+          style={{
+            fontSize: '17px',
+            fontWeight: '800',
+            marginBottom: '12px',
+          }}
+        >
+          Mes avis
+        </div>
+
+        {avis.length === 0 ? (
+          <div
+            style={{
+              background: '#1A1A1A',
+              border: '1px solid #2A2A2A',
+              borderRadius: '16px',
+              padding: '40px 20px',
+              textAlign: 'center',
+              color: '#888',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '40px',
+                marginBottom: '10px',
+              }}
+            >
+              ⭐
+            </div>
+
+            <div
+              style={{
+                fontSize: '14px',
+                fontWeight: '700',
+                color: '#aaa',
+                marginBottom: '5px',
+              }}
+            >
+              Aucun avis
+            </div>
+
+            <div
+              style={{
+                fontSize: '12px',
+              }}
+            >
+              Tes avis apparaîtront ici après tes achats.
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            {avis.map(item => (
+              <div
+                key={item.id}
+                style={{
+                  background: '#1A1A1A',
+                  border: '1px solid #2A2A2A',
+                  borderRadius: '16px',
+                  padding: '16px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: '800',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      {item.promotions?.titre || 'Article'}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: '#888',
+                      }}
+                    >
+                      Vendeur : {item.vendeur?.nom || '-'}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#777',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {formatDate(item.created_at)}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '8px' }}>
+                  {renderStars(Number(item.note || 0))}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '13px',
+                    color: '#ccc',
+                    lineHeight: '1.5',
+                  }}
+                >
+                  {item.commentaire || 'Aucun commentaire.'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  )
-}
-
-export default function Avis() {
-  return (
-    <Suspense fallback={
-      <div style={{
-        minHeight: '100vh', background: '#0A0A0A',
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'center', color: '#888',
-        fontFamily: 'sans-serif'
-      }}>
-        Chargement...
-      </div>
-    }>
-      <AvisContent />
-    </Suspense>
   )
 }

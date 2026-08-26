@@ -10,11 +10,14 @@ export default function Wallet() {
   const [user, setUser] = useState(null)
   const [wallet, setWallet] = useState(null)
   const [transactions, setTransactions] = useState([])
+
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   const [showDeposit, setShowDeposit] = useState(false)
   const [depositAmount, setDepositAmount] = useState('')
   const [depositLoading, setDepositLoading] = useState(false)
+
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -26,7 +29,8 @@ export default function Wallet() {
     setLoading(true)
     setError('')
 
-    const { data, error: userError } = await supabase.auth.getUser()
+    const { data, error: userError } =
+      await supabase.auth.getUser()
 
     if (userError || !data.user) {
       router.push('/auth')
@@ -35,43 +39,72 @@ export default function Wallet() {
 
     setUser(data.user)
 
-    await loadWallet(data.user.id)
-    await loadWalletTransactions(data.user.id)
+    await Promise.all([
+      loadWallet(data.user.id),
+      loadWalletTransactions(data.user.id),
+    ])
 
     setLoading(false)
   }
 
   const loadWallet = async (userId) => {
-    const { data: walletData, error: walletError } = await supabase
+    const { data, error } = await supabase
       .from('wallets')
       .select('*')
       .eq('user_id', userId)
       .single()
 
-    if (walletError) {
-      console.error('Erreur wallet:', walletError)
-      setError('Impossible de récupérer le portefeuille.')
-      return
+    if (error) {
+      console.error('Erreur wallet:', error)
+      setError(
+        'Impossible de récupérer ton portefeuille.'
+      )
+      return null
     }
 
-    setWallet(walletData)
+    setWallet(data)
+    return data
   }
 
   const loadWalletTransactions = async (userId) => {
-    const { data: txData, error: txError } = await supabase
+    const { data, error } = await supabase
       .from('wallet_transactions')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10)
+      .order('created_at', {
+        ascending: false,
+      })
+      .limit(20)
 
-    if (txError) {
-      console.error('Erreur historique portefeuille:', txError)
-      setError('Impossible de récupérer l’activité du portefeuille.')
-      return
+    if (error) {
+      console.error(
+        'Erreur historique portefeuille:',
+        error
+      )
+
+      setError(
+        'Impossible de récupérer l’activité du portefeuille.'
+      )
+
+      return []
     }
 
-    setTransactions(txData || [])
+    setTransactions(data || [])
+    return data || []
+  }
+
+  const refreshWallet = async () => {
+    if (!user) return
+
+    setRefreshing(true)
+    setError('')
+
+    await Promise.all([
+      loadWallet(user.id),
+      loadWalletTransactions(user.id),
+    ])
+
+    setRefreshing(false)
   }
 
   const formatMoney = (value) => {
@@ -79,15 +112,18 @@ export default function Wallet() {
   }
 
   const formatDate = (date) => {
-    if (!date) return ''
+    if (!date) return '-'
 
-    return new Date(date).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    return new Date(date).toLocaleDateString(
+      'fr-FR',
+      {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }
+    )
   }
 
   const handleDeposit = async () => {
@@ -97,12 +133,16 @@ export default function Wallet() {
     const amount = Number(depositAmount)
 
     if (!amount || amount <= 0) {
-      setError('Entre un montant valide supérieur à 0 FCFA.')
+      setError(
+        'Entre un montant valide supérieur à 0 FCFA.'
+      )
       return
     }
 
     if (amount > 1000000) {
-      setError('Le montant maximum pour ce test est de 1 000 000 FCFA.')
+      setError(
+        'Le montant maximum pour ce test est de 1 000 000 FCFA.'
+      )
       return
     }
 
@@ -110,7 +150,7 @@ export default function Wallet() {
 
     const reference = `TEST-${Date.now()}`
 
-    const { data, error: depositError } = await supabase.rpc(
+    const { data, error } = await supabase.rpc(
       'simulate_wallet_deposit',
       {
         p_amount: amount,
@@ -118,15 +158,26 @@ export default function Wallet() {
       }
     )
 
-    if (depositError) {
-      console.error('Erreur dépôt:', depositError)
-      setError(`Erreur lors du dépôt : ${depositError.message}`)
+    if (error) {
+      console.error(
+        'Erreur dépôt:',
+        error
+      )
+
+      setError(
+        `Erreur lors du dépôt : ${error.message}`
+      )
+
       setDepositLoading(false)
       return
     }
 
     if (!data?.success) {
-      setError('Le dépôt n’a pas pu être effectué.')
+      setError(
+        data?.message ||
+          'Le dépôt n’a pas pu être effectué.'
+      )
+
       setDepositLoading(false)
       return
     }
@@ -135,11 +186,12 @@ export default function Wallet() {
     setShowDeposit(false)
 
     setMessage(
-      `Dépôt simulé avec succès : +${formatMoney(amount)} FCFA`
+      `Dépôt simulé avec succès : +${formatMoney(
+        amount
+      )} FCFA`
     )
 
-    await loadWallet(user.id)
-    await loadWalletTransactions(user.id)
+    await refreshWallet()
 
     setDepositLoading(false)
   }
@@ -151,20 +203,33 @@ export default function Wallet() {
       achat: 'Achat',
       reservation: 'Réservation',
       remboursement: 'Remboursement',
-      liberation_fonds: 'Libération des fonds',
+      liberation_fonds:
+        'Libération des fonds',
       commission: 'Commission',
       ajustement: 'Ajustement',
     }
 
-    return labels[type] || 'Transaction'
+    return labels[type] || 'Mouvement'
+  }
+
+  const isPositiveTransaction = (type) => {
+    return [
+      'depot',
+      'remboursement',
+      'liberation_fonds',
+    ].includes(type)
+  }
+
+  const getTransactionColor = (type) => {
+    return isPositiveTransaction(type)
+      ? '#4ADE80'
+      : '#FF5C00'
   }
 
   const getTransactionPrefix = (type) => {
-    if (type === 'depot' || type === 'remboursement') {
-      return '+'
-    }
-
-    return '-'
+    return isPositiveTransaction(type)
+      ? '+'
+      : '-'
   }
 
   if (loading) {
@@ -195,6 +260,7 @@ export default function Wallet() {
       }}
     >
       {/* HEADER */}
+
       <div
         style={{
           position: 'fixed',
@@ -202,7 +268,8 @@ export default function Wallet() {
           left: 0,
           right: 0,
           background: '#0A0A0A',
-          borderBottom: '1px solid #1E1E1E',
+          borderBottom:
+            '1px solid #1E1E1E',
           padding: '14px 20px',
           display: 'flex',
           alignItems: 'center',
@@ -233,11 +300,34 @@ export default function Wallet() {
             color: '#FF5C00',
           }}
         >
-          Promo's<span style={{ color: 'white' }}>World</span>
+          Promo's
+          <span style={{ color: 'white' }}>
+            World
+          </span>
         </div>
+
+        <button
+          onClick={refreshWallet}
+          disabled={refreshing}
+          style={{
+            marginLeft: 'auto',
+            width: '36px',
+            height: '36px',
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '10px',
+            color: '#aaa',
+            cursor: refreshing
+              ? 'not-allowed'
+              : 'pointer',
+          }}
+        >
+          {refreshing ? '...' : '↻'}
+        </button>
       </div>
 
       {/* CONTENT */}
+
       <div
         style={{
           padding: '80px 20px 40px',
@@ -262,10 +352,12 @@ export default function Wallet() {
             marginBottom: '24px',
           }}
         >
-          Gérez votre solde, vos dépôts, vos retraits et vos transactions.
+          Gère ton solde disponible et tes
+          fonds bloqués.
         </div>
 
-        {/* MESSAGE SUCCÈS */}
+        {/* MESSAGES */}
+
         {message && (
           <div
             style={{
@@ -283,7 +375,6 @@ export default function Wallet() {
           </div>
         )}
 
-        {/* MESSAGE ERREUR */}
         {error && (
           <div
             style={{
@@ -302,19 +393,21 @@ export default function Wallet() {
         )}
 
         {/* SOLDE */}
+
         <div
           style={{
-            background: 'linear-gradient(135deg, #FF5C00, #FF8A00)',
+            background:
+              'linear-gradient(135deg, #FF5C00, #FF8A00)',
             borderRadius: '22px',
             padding: '24px',
-            marginBottom: '20px',
+            marginBottom: '14px',
           }}
         >
           <div
             style={{
               fontSize: '13px',
               opacity: 0.85,
-              marginBottom: '10px',
+              marginBottom: '8px',
             }}
           >
             Solde disponible
@@ -324,23 +417,86 @@ export default function Wallet() {
             style={{
               fontSize: '34px',
               fontWeight: '900',
-              marginBottom: '4px',
+              marginBottom: '10px',
             }}
           >
-            {formatMoney(wallet?.solde_disponible)} FCFA
+            {formatMoney(
+              wallet?.solde_disponible
+            )}{' '}
+            FCFA
           </div>
 
           <div
             style={{
               fontSize: '12px',
-              opacity: 0.85,
+              opacity: 0.9,
             }}
           >
-            Fonds bloqués : {formatMoney(wallet?.solde_bloque)} FCFA
+            Argent utilisable pour tes achats
+            et réservations.
           </div>
         </div>
 
-        {/* BOUTONS */}
+        {/* FONDS BLOQUES */}
+
+        <div
+          style={{
+            background: '#1A1A1A',
+            border: '1px solid #2A2A2A',
+            borderRadius: '16px',
+            padding: '16px',
+            marginBottom: '20px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '12px',
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#888',
+                  marginBottom: '5px',
+                }}
+              >
+                🔒 Fonds bloqués
+              </div>
+
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: '800',
+                  color: '#FFB800',
+                }}
+              >
+                {formatMoney(
+                  wallet?.solde_bloque
+                )}{' '}
+                FCFA
+              </div>
+            </div>
+
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#666',
+                textAlign: 'right',
+                maxWidth: '180px',
+              }}
+            >
+              Argent réservé en attente de
+              finalisation.
+            </div>
+          </div>
+        </div>
+
+        {/* ACTIONS */}
+
         <div
           style={{
             display: 'grid',
@@ -370,7 +526,12 @@ export default function Wallet() {
           </button>
 
           <button
-            onClick={() => alert('Retrait bientôt disponible.')}
+            onClick={() => {
+              setError(
+                'Les retraits seront disponibles après intégration du paiement réel.'
+              )
+              setMessage('')
+            }}
             style={{
               padding: '14px',
               background: '#1A1A1A',
@@ -385,7 +546,9 @@ export default function Wallet() {
           </button>
 
           <button
-            onClick={() => router.push('/transactions')}
+            onClick={() =>
+              router.push('/transactions')
+            }
             style={{
               padding: '14px',
               background: '#1A1A1A',
@@ -401,12 +564,14 @@ export default function Wallet() {
         </div>
 
         {/* MODAL DEPOT */}
+
         {showDeposit && (
           <div
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0, 0, 0, 0.75)',
+              background:
+                'rgba(0,0,0,0.75)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -442,7 +607,9 @@ export default function Wallet() {
                   lineHeight: 1.5,
                 }}
               >
-                Mode simulation — aucun paiement réel ne sera effectué.
+                Mode simulation pour les tests.
+                Aucun paiement réel ne sera
+                effectué.
               </div>
 
               <label
@@ -461,7 +628,8 @@ export default function Wallet() {
                   display: 'flex',
                   alignItems: 'center',
                   background: '#0A0A0A',
-                  border: '1px solid #2A2A2A',
+                  border:
+                    '1px solid #2A2A2A',
                   borderRadius: '12px',
                   overflow: 'hidden',
                   marginBottom: '16px',
@@ -472,11 +640,16 @@ export default function Wallet() {
                   min="1"
                   max="1000000"
                   value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
+                  onChange={(e) =>
+                    setDepositAmount(
+                      e.target.value
+                    )
+                  }
                   placeholder="Ex : 10000"
                   style={{
                     flex: 1,
-                    background: 'transparent',
+                    background:
+                      'transparent',
                     border: 'none',
                     outline: 'none',
                     color: 'white',
@@ -514,13 +687,15 @@ export default function Wallet() {
                     flex: 1,
                     padding: '13px',
                     background: '#1A1A1A',
-                    border: '1px solid #2A2A2A',
+                    border:
+                      '1px solid #2A2A2A',
                     borderRadius: '12px',
                     color: 'white',
                     fontWeight: '700',
-                    cursor: depositLoading
-                      ? 'not-allowed'
-                      : 'pointer',
+                    cursor:
+                      depositLoading
+                        ? 'not-allowed'
+                        : 'pointer',
                   }}
                 >
                   Annuler
@@ -537,9 +712,10 @@ export default function Wallet() {
                     borderRadius: '12px',
                     color: 'white',
                     fontWeight: '800',
-                    cursor: depositLoading
-                      ? 'not-allowed'
-                      : 'pointer',
+                    cursor:
+                      depositLoading
+                        ? 'not-allowed'
+                        : 'pointer',
                   }}
                 >
                   {depositLoading
@@ -552,22 +728,45 @@ export default function Wallet() {
         )}
 
         {/* ACTIVITE RECENTE */}
+
         <div
           style={{
             background: '#1A1A1A',
             borderRadius: '16px',
-            border: '1px solid #2A2A2A',
+            border:
+              '1px solid #2A2A2A',
             padding: '16px',
           }}
         >
           <div
             style={{
-              fontSize: '15px',
-              fontWeight: '800',
+              display: 'flex',
+              justifyContent:
+                'space-between',
+              alignItems: 'center',
               marginBottom: '14px',
             }}
           >
-            Activité récente
+            <div
+              style={{
+                fontSize: '15px',
+                fontWeight: '800',
+              }}
+            >
+              Activité récente
+            </div>
+
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#666',
+              }}
+            >
+              {transactions.length} mouvement
+              {transactions.length > 1
+                ? 's'
+                : ''}
+            </div>
           </div>
 
           {transactions.length === 0 ? (
@@ -578,7 +777,23 @@ export default function Wallet() {
                 padding: '30px',
               }}
             >
-              Aucune activité pour le moment.
+              <div
+                style={{
+                  fontSize: '30px',
+                  marginBottom: '8px',
+                }}
+              >
+                💰
+              </div>
+
+              <div
+                style={{
+                  fontSize: '13px',
+                }}
+              >
+                Aucune activité pour le
+                moment.
+              </div>
             </div>
           ) : (
             <div
@@ -593,20 +808,29 @@ export default function Wallet() {
                   key={t.id}
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
+                    justifyContent:
+                      'space-between',
                     gap: '12px',
-                    borderBottom: '1px solid #252525',
+                    borderBottom:
+                      '1px solid #252525',
                     paddingBottom: '12px',
                   }}
                 >
-                  <div>
+                  <div
+                    style={{
+                      minWidth: 0,
+                      flex: 1,
+                    }}
+                  >
                     <div
                       style={{
                         fontSize: '13px',
                         fontWeight: '700',
                       }}
                     >
-                      {getTransactionLabel(t.type)}
+                      {getTransactionLabel(
+                        t.type
+                      )}
                     </div>
 
                     <div
@@ -616,7 +840,8 @@ export default function Wallet() {
                         marginTop: '3px',
                       }}
                     >
-                      {t.description || 'Mouvement portefeuille'}
+                      {t.description ||
+                        'Mouvement portefeuille'}
                     </div>
 
                     <div
@@ -626,7 +851,9 @@ export default function Wallet() {
                         marginTop: '3px',
                       }}
                     >
-                      {formatDate(t.created_at)}
+                      {formatDate(
+                        t.created_at
+                      )}
                     </div>
                   </div>
 
@@ -635,19 +862,46 @@ export default function Wallet() {
                       fontSize: '13px',
                       fontWeight: '800',
                       color:
-                        t.type === 'depot' ||
-                        t.type === 'remboursement'
-                          ? '#4ADE80'
-                          : '#FF5C00',
+                        getTransactionColor(
+                          t.type
+                        ),
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {getTransactionPrefix(t.type)}
-                    {formatMoney(t.montant)} FCFA
+                    {getTransactionPrefix(
+                      t.type
+                    )}
+                    {formatMoney(
+                      t.montant
+                    )}{' '}
+                    FCFA
                   </div>
                 </div>
               ))}
             </div>
+          )}
+
+          {transactions.length > 0 && (
+            <button
+              onClick={() =>
+                router.push('/transactions')
+              }
+              style={{
+                width: '100%',
+                marginTop: '14px',
+                padding: '11px',
+                background:
+                  'transparent',
+                border:
+                  '1px solid #2A2A2A',
+                borderRadius: '10px',
+                color: '#aaa',
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              Voir toutes les transactions →
+            </button>
           )}
         </div>
       </div>

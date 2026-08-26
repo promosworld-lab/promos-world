@@ -22,65 +22,147 @@ export default function Reserver() {
   const [messageType, setMessageType] = useState('error')
 
   useEffect(() => {
-    initPage()
+    if (id) {
+      initPage()
+    }
   }, [id])
+
+  // =========================================================
+  // INITIALISATION
+  // =========================================================
 
   const initPage = async () => {
     setLoading(true)
     setMessage('')
 
-    const { data: authData, error: authError } =
-      await supabase.auth.getUser()
+    try {
+      // -----------------------------------------------------
+      // UTILISATEUR
+      // -----------------------------------------------------
 
-    if (authError || !authData.user) {
-      router.push('/auth')
-      return
-    }
+      const {
+        data: authData,
+        error: authError,
+      } = await supabase.auth.getUser()
 
-    setUser(authData.user)
+      if (authError || !authData?.user) {
+        router.push('/auth')
+        return
+      }
 
-    const { data: promoData, error: promoError } = await supabase
-      .from('promotions')
-      .select('*, profiles(nom, adresse)')
-      .eq('id', id)
-      .single()
+      setUser(authData.user)
 
-    if (promoError) {
-      console.error('Erreur promotion:', promoError)
-      setMessage('Impossible de charger cette promotion.')
-      setLoading(false)
-      return
-    }
+      // -----------------------------------------------------
+      // PROMOTION
+      // -----------------------------------------------------
 
-    setPromo(promoData)
+      const {
+        data: promoData,
+        error: promoError,
+      } = await supabase
+        .from('promotions')
+        .select(`
+          *,
+          profiles (
+            nom,
+            adresse
+          )
+        `)
+        .eq('id', id)
+        .single()
 
-    const { data: walletData, error: walletError } =
-      await supabase
+      if (promoError || !promoData) {
+        console.error(
+          'Erreur promotion:',
+          promoError
+        )
+
+        setMessage(
+          'Impossible de charger cette promotion.'
+        )
+
+        setLoading(false)
+        return
+      }
+
+      setPromo(promoData)
+
+      // -----------------------------------------------------
+      // WALLET
+      // -----------------------------------------------------
+
+      const {
+        data: walletData,
+        error: walletError,
+      } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', authData.user.id)
         .single()
 
-    if (walletError) {
-      console.error('Erreur wallet:', walletError)
+      if (walletError || !walletData) {
+        console.error(
+          'Erreur wallet:',
+          walletError
+        )
 
-      setMessage(
-        'Impossible de récupérer ton portefeuille.'
+        setMessage(
+          'Impossible de récupérer ton portefeuille.'
+        )
+
+        setLoading(false)
+        return
+      }
+
+      setWallet(walletData)
+
+      // -----------------------------------------------------
+      // VÉRIFIER S'IL EXISTE DÉJÀ UNE RÉSERVATION
+      // -----------------------------------------------------
+
+      const {
+        data: existingReservation,
+        error: existingError,
+      } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('promotion_id', id)
+        .eq('client_id', authData.user.id)
+        .not(
+          'statut',
+          'in',
+          '("annulee","expiree")'
+        )
+        .maybeSingle()
+
+      if (!existingError && existingReservation) {
+        setReservation(existingReservation)
+      }
+    } catch (error) {
+      console.error(
+        'Erreur initialisation:',
+        error
       )
 
-      setLoading(false)
-      return
+      setMessage(
+        'Une erreur est survenue lors du chargement.'
+      )
     }
-
-    setWallet(walletData)
 
     setLoading(false)
   }
 
+  // =========================================================
+  // RAFRAÎCHIR WALLET
+  // =========================================================
+
   const refreshWallet = async () => {
     if (!user) return
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error,
+    } = await supabase
       .from('wallets')
       .select('*')
       .eq('user_id', user.id)
@@ -91,109 +173,238 @@ export default function Reserver() {
     }
   }
 
+  // =========================================================
+  // FORMAT MONNAIE
+  // =========================================================
+
+  const formatMoney = (value) => {
+    return Number(value || 0).toLocaleString('fr-FR')
+  }
+
+  // =========================================================
+  // FORMAT DATE
+  // =========================================================
+
+  const formatDate = (value) => {
+    if (!value) return '—'
+
+    const date = new Date(value)
+
+    if (Number.isNaN(date.getTime())) {
+      return '—'
+    }
+
+    return date.toLocaleDateString(
+      'fr-FR',
+      {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }
+    )
+  }
+
+  // =========================================================
+  // CONTINUER
+  // =========================================================
+
   const handleContinue = () => {
     setMessage('')
 
-    if (!promo) return
+    if (!promo) {
+      setMessage(
+        'Promotion introuvable.'
+      )
+      return
+    }
 
     if (promo.statut !== 'actif') {
-      setMessage('Cette promotion n’est pas active.')
+      setMessage(
+        'Cette promotion n’est plus active.'
+      )
       return
     }
 
     if (Number(promo.stock) <= 0) {
-      setMessage('Stock épuisé.')
+      setMessage(
+        'Stock épuisé.'
+      )
       return
     }
 
     if (!wallet) {
-      setMessage('Portefeuille introuvable.')
+      setMessage(
+        'Portefeuille introuvable.'
+      )
       return
     }
 
-    const acompte = Math.round(Number(promo.prix_promo) * 0.2)
+    // 20 % du prix total
+    const acompte = Math.round(
+      Number(promo.prix_promo) * 0.2
+    )
 
-    if (Number(wallet.solde_disponible) < acompte) {
+    const soldeDisponible = Number(
+      wallet.solde_disponible || 0
+    )
+
+    if (soldeDisponible < acompte) {
       setMessage(
-        `Solde insuffisant. Il faut ${formatMoney(acompte)} FCFA pour réserver, mais ton solde est de ${formatMoney(wallet.solde_disponible)} FCFA.`
+        `Solde insuffisant. Il faut ${formatMoney(
+          acompte
+        )} FCFA pour réserver. Ton solde disponible est de ${formatMoney(
+          soldeDisponible
+        )} FCFA.`
       )
+
+      setMessageType('error')
+
       return
     }
 
     setEtape(2)
   }
 
+  // =========================================================
+  // CRÉER LA RÉSERVATION
+  // =========================================================
+
   const handleReserver = async () => {
-    if (!user || !promo || processing) return
+    if (
+      !user ||
+      !promo ||
+      processing
+    ) {
+      return
+    }
 
     setProcessing(true)
     setMessage('')
 
-    const { data, error } = await supabase.rpc(
-      'create_reservation_from_wallet',
-      {
-        p_promotion_id: promo.id,
+    try {
+      // -----------------------------------------------------
+      // RPC FINANCIÈRE
+      // -----------------------------------------------------
+
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        'create_reservation_from_wallet',
+        {
+          p_promotion_id: promo.id,
+        }
+      )
+
+      if (error) {
+        console.error(
+          'Erreur réservation:',
+          error
+        )
+
+        setMessage(
+          error.message ||
+            'Impossible de créer la réservation.'
+        )
+
+        setMessageType('error')
+
+        await refreshWallet()
+
+        setProcessing(false)
+
+        return
       }
-    )
 
-    if (error) {
-      console.error('Erreur réservation:', error)
+      if (!data?.success) {
+        setMessage(
+          data?.message ||
+            'La réservation n’a pas pu être effectuée.'
+        )
 
-      setMessage(error.message)
-      setMessageType('error')
+        setMessageType('error')
+
+        setProcessing(false)
+
+        return
+      }
+
+      // -----------------------------------------------------
+      // RÉCUPÉRER LA RÉSERVATION CRÉÉE
+      // -----------------------------------------------------
+
+      const {
+        data: reservationData,
+        error: reservationError,
+      } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq(
+          'id',
+          data.reservation_id
+        )
+        .single()
+
+      if (reservationError) {
+        console.error(
+          'Erreur récupération réservation:',
+          reservationError
+        )
+      }
+
+      // -----------------------------------------------------
+      // METTRE À JOUR LE WALLET LOCAL
+      // -----------------------------------------------------
 
       await refreshWallet()
 
-      setProcessing(false)
-      return
-    }
-
-    if (!data?.success) {
-      setMessage(
-        'La réservation n’a pas pu être effectuée.'
-      )
-
-      setProcessing(false)
-      return
-    }
-
-    const { data: reservationData, error: reservationError } =
-      await supabase
-        .from('reservations')
-        .select('*')
-        .eq('id', data.reservation_id)
-        .single()
-
-    if (reservationError) {
-      console.error(
-        'Erreur récupération réservation:',
-        reservationError
-      )
-    }
-
-    setReservation(
-      reservationData || {
-        id: data.reservation_id,
-        date_expiration: data.date_expiration,
+      if (reservationData) {
+        setReservation(
+          reservationData
+        )
+      } else {
+        setReservation({
+          id: data.reservation_id,
+          date_expiration:
+            data.date_expiration ||
+            null,
+          date_limite_acceptation:
+            data.date_limite_acceptation ||
+            null,
+          statut:
+            data.statut ||
+            'acompte_paye',
+        })
       }
-    )
 
-    setWallet((current) => ({
-      ...current,
-      solde_disponible: data.solde_apres,
-      solde_bloque: data.fonds_bloques,
-    }))
+      setMessageType('success')
 
-    setMessageType('success')
-    setMessage('Réservation effectuée avec succès.')
+      setMessage(
+        'Réservation effectuée avec succès.'
+      )
 
-    setEtape(3)
+      setEtape(3)
+    } catch (error) {
+      console.error(
+        'Erreur inattendue réservation:',
+        error
+      )
+
+      setMessage(
+        'Une erreur inattendue est survenue.'
+      )
+
+      setMessageType('error')
+    }
+
     setProcessing(false)
   }
 
-  const formatMoney = (value) => {
-    return Number(value || 0).toLocaleString('fr-FR')
-  }
+  // =========================================================
+  // LOADING
+  // =========================================================
 
   if (loading) {
     return (
@@ -213,6 +424,10 @@ export default function Reserver() {
     )
   }
 
+  // =========================================================
+  // PROMOTION INTROUVABLE
+  // =========================================================
+
   if (!promo) {
     return (
       <div
@@ -231,14 +446,31 @@ export default function Reserver() {
     )
   }
 
-  const acompte = Math.round(Number(promo.prix_promo) * 0.2)
-  const restant = Number(promo.prix_promo) - acompte
+  // =========================================================
+  // CALCULS
+  // =========================================================
+
+  const prixTotal = Number(
+    promo.prix_promo || 0
+  )
+
+  const acompte = Math.round(
+    prixTotal * 0.2
+  )
+
+  const restant =
+    prixTotal - acompte
 
   const soldeDisponible = Number(
     wallet?.solde_disponible || 0
   )
 
-  const soldeSuffisant = soldeDisponible >= acompte
+  const soldeSuffisant =
+    soldeDisponible >= acompte
+
+  // =========================================================
+  // INTERFACE
+  // =========================================================
 
   return (
     <div
@@ -249,7 +481,9 @@ export default function Reserver() {
         fontFamily: 'sans-serif',
       }}
     >
-      {/* HEADER */}
+      {/* ===================================================
+          HEADER
+      =================================================== */}
 
       <div
         style={{
@@ -258,7 +492,8 @@ export default function Reserver() {
           left: 0,
           right: 0,
           background: '#0A0A0A',
-          borderBottom: '1px solid #1E1E1E',
+          borderBottom:
+            '1px solid #1E1E1E',
           padding: '14px 20px',
           display: 'flex',
           alignItems: 'center',
@@ -270,13 +505,16 @@ export default function Reserver() {
           onClick={() =>
             etape === 1
               ? router.back()
-              : setEtape(etape - 1)
+              : setEtape(
+                  etape - 1
+                )
           }
           style={{
             width: '36px',
             height: '36px',
             background: '#1A1A1A',
-            border: '1px solid #2A2A2A',
+            border:
+              '1px solid #2A2A2A',
             borderRadius: '10px',
             color: 'white',
             fontSize: '16px',
@@ -293,22 +531,26 @@ export default function Reserver() {
           }}
         >
           {etape === 3
-            ? 'Réservation confirmée'
+            ? 'Réservation créée'
             : 'Réservation'}
         </div>
       </div>
 
-      {/* CONTENT */}
+      {/* ===================================================
+          CONTENT
+      =================================================== */}
 
       <div
         style={{
-          paddingTop: '70px',
           maxWidth: '500px',
           margin: '0 auto',
-          padding: '80px 20px 40px',
+          padding:
+            '80px 20px 40px',
         }}
       >
-        {/* STEPS */}
+        {/* =================================================
+            STEPS
+        ================================================= */}
 
         <div
           style={{
@@ -318,63 +560,71 @@ export default function Reserver() {
             marginBottom: '28px',
           }}
         >
-          {[1, 2, 3].map((s, i) => (
-            <Fragment key={s}>
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  background:
-                    etape >= s
-                      ? '#FF5C00'
-                      : '#1A1A1A',
-                  border:
-                    etape >= s
-                      ? 'none'
-                      : '1px solid #333',
-                  color:
-                    etape >= s
-                      ? 'white'
-                      : '#888',
-                  flexShrink: 0,
-                }}
-              >
-                {s}
-              </div>
-
-              {i < 2 && (
+          {[1, 2, 3].map(
+            (s, i) => (
+              <Fragment key={s}>
                 <div
                   style={{
-                    flex: 1,
-                    height: '1px',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems:
+                      'center',
+                    justifyContent:
+                      'center',
+                    fontSize: '11px',
+                    fontWeight: '700',
                     background:
-                      etape > s
+                      etape >= s
                         ? '#FF5C00'
-                        : '#333',
+                        : '#1A1A1A',
+                    border:
+                      etape >= s
+                        ? 'none'
+                        : '1px solid #333',
+                    color:
+                      etape >= s
+                        ? 'white'
+                        : '#888',
+                    flexShrink: 0,
                   }}
-                />
-              )}
-            </Fragment>
-          ))}
+                >
+                  {s}
+                </div>
+
+                {i < 2 && (
+                  <div
+                    style={{
+                      flex: 1,
+                      height: '1px',
+                      background:
+                        etape > s
+                          ? '#FF5C00'
+                          : '#333',
+                    }}
+                  />
+                )}
+              </Fragment>
+            )
+          )}
         </div>
 
-        {/* PROMOTION */}
+        {/* =================================================
+            PROMOTION
+        ================================================= */}
 
         <div
           style={{
             background: '#1A1A1A',
             borderRadius: '16px',
             padding: '16px',
-            border: '1px solid #2A2A2A',
+            border:
+              '1px solid #2A2A2A',
             marginBottom: '20px',
             display: 'flex',
-            alignItems: 'center',
+            alignItems:
+              'center',
             gap: '12px',
           }}
         >
@@ -385,31 +635,45 @@ export default function Reserver() {
               background: '#252525',
               borderRadius: '12px',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              alignItems:
+                'center',
+              justifyContent:
+                'center',
               fontSize: '24px',
               overflow: 'hidden',
+              flexShrink: 0,
             }}
           >
             {promo.photo_url ? (
-              promo.media_type === 'video' ||
-              promo.photo_url.includes('.mp4') ? (
+              promo.media_type ===
+                'video' ||
+              promo.photo_url.includes(
+                '.mp4'
+              ) ? (
                 <video
-                  src={promo.photo_url}
+                  src={
+                    promo.photo_url
+                  }
                   style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover',
+                    objectFit:
+                      'cover',
                   }}
+                  muted
+                  playsInline
                 />
               ) : (
                 <img
-                  src={promo.photo_url}
+                  src={
+                    promo.photo_url
+                  }
                   alt={promo.titre}
                   style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover',
+                    objectFit:
+                      'cover',
                   }}
                 />
               )
@@ -418,7 +682,11 @@ export default function Reserver() {
             )}
           </div>
 
-          <div>
+          <div
+            style={{
+              minWidth: 0,
+            }}
+          >
             <div
               style={{
                 fontSize: '14px',
@@ -435,14 +703,19 @@ export default function Reserver() {
                 color: '#888',
               }}
             >
-              {promo.profiles?.nom} ·{' '}
-              {promo.profiles?.adresse ||
+              {promo.profiles?.nom ||
+                'Vendeur'}
+              {' · '}
+              {promo.profiles
+                ?.adresse ||
                 'Adresse non précisée'}
             </div>
           </div>
         </div>
 
-        {/* ÉTAPE 1 */}
+        {/* =================================================
+            ÉTAPE 1
+        ================================================= */}
 
         {etape === 1 && (
           <>
@@ -453,8 +726,11 @@ export default function Reserver() {
                 marginBottom: '12px',
               }}
             >
-              💰 Paiement par portefeuille
+              💰 Paiement par
+              portefeuille
             </div>
+
+            {/* WALLET */}
 
             <div
               style={{
@@ -488,90 +764,129 @@ export default function Reserver() {
                   marginBottom: '10px',
                 }}
               >
-                {formatMoney(soldeDisponible)} FCFA
+                {formatMoney(
+                  soldeDisponible
+                )}{' '}
+                FCFA
               </div>
 
               <div
                 style={{
                   fontSize: '13px',
-                  color: soldeSuffisant
-                    ? '#6EE7A0'
-                    : '#FF8A8A',
+                  color:
+                    soldeSuffisant
+                      ? '#6EE7A0'
+                      : '#FF8A8A',
                   fontWeight: '700',
                 }}
               >
                 {soldeSuffisant
                   ? '✓ Ton solde couvre l’acompte.'
                   : `✕ Il manque ${formatMoney(
-                      acompte - soldeDisponible
+                      acompte -
+                        soldeDisponible
                     )} FCFA.`}
               </div>
             </div>
+
+            {/* RÉCAP FINANCIER */}
 
             <div
               style={{
                 background: '#1A1A1A',
                 borderRadius: '14px',
                 padding: '14px',
-                border: '1px solid #2A2A2A',
+                border:
+                  '1px solid #2A2A2A',
                 marginBottom: '20px',
               }}
             >
               {[
                 {
-                  label: 'Prix total',
+                  label:
+                    'Prix total',
                   value: `${formatMoney(
-                    promo.prix_promo
+                    prixTotal
                   )} FCFA`,
                 },
                 {
-                  label: 'Acompte à bloquer (20%)',
+                  label:
+                    'Acompte à bloquer (20%)',
                   value: `${formatMoney(
                     acompte
                   )} FCFA`,
-                  color: '#FF5C00',
+                  color:
+                    '#FF5C00',
                 },
                 {
-                  label: 'Reste à payer plus tard',
+                  label:
+                    'Reste à payer',
                   value: `${formatMoney(
                     restant
                   )} FCFA`,
                 },
                 {
-                  label: 'Validité',
-                  value: '3 mois',
+                  label:
+                    'Délai vendeur',
+                  value:
+                    '36 heures',
                 },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    justifyContent:
-                      'space-between',
-                    marginBottom:
-                      i < 3 ? '8px' : '0',
-                    fontSize: '13px',
-                  }}
-                >
-                  <span
+                {
+                  label:
+                    'Validité réservation',
+                  value:
+                    '3 mois',
+                },
+              ].map(
+                (
+                  item,
+                  i
+                ) => (
+                  <div
+                    key={i}
                     style={{
-                      color: '#888',
+                      display:
+                        'flex',
+                      justifyContent:
+                        'space-between',
+                      marginBottom:
+                        i < 4
+                          ? '8px'
+                          : '0',
+                      fontSize:
+                        '13px',
+                      gap: '12px',
                     }}
                   >
-                    {item.label}
-                  </span>
+                    <span
+                      style={{
+                        color:
+                          '#888',
+                      }}
+                    >
+                      {
+                        item.label
+                      }
+                    </span>
 
-                  <span
-                    style={{
-                      fontWeight: '700',
-                      color:
-                        item.color || 'white',
-                    }}
-                  >
-                    {item.value}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      style={{
+                        fontWeight:
+                          '700',
+                        color:
+                          item.color ||
+                          'white',
+                        textAlign:
+                          'right',
+                      }}
+                    >
+                      {
+                        item.value
+                      }
+                    </span>
+                  </div>
+                )
+              )}
             </div>
 
             {!soldeSuffisant && (
@@ -589,22 +904,29 @@ export default function Reserver() {
                   lineHeight: '1.5',
                 }}
               >
-                Ton portefeuille contient{' '}
+                Ton portefeuille
+                contient{' '}
                 <strong>
                   {formatMoney(
                     soldeDisponible
                   )}{' '}
                   FCFA
                 </strong>
-                , mais cette réservation
+                , mais cette
+                réservation
                 nécessite{' '}
                 <strong>
-                  {formatMoney(acompte)} FCFA
+                  {formatMoney(
+                    acompte
+                  )}{' '}
+                  FCFA
                 </strong>
                 .
                 <br />
-                Tu dois d’abord recharger ton
-                portefeuille.
+                Recharge ton
+                portefeuille
+                avant de
+                continuer.
               </div>
             )}
 
@@ -612,21 +934,27 @@ export default function Reserver() {
               <div
                 style={{
                   padding: '12px',
-                  borderRadius: '10px',
-                  marginBottom: '16px',
+                  borderRadius:
+                    '10px',
+                  marginBottom:
+                    '16px',
                   background:
-                    messageType === 'success'
+                    messageType ===
+                    'success'
                       ? 'rgba(0,196,140,0.1)'
                       : 'rgba(255,60,60,0.1)',
                   border:
-                    messageType === 'success'
+                    messageType ===
+                    'success'
                       ? '1px solid #00C48C'
                       : '1px solid #FF3C3C',
                   color:
-                    messageType === 'success'
+                    messageType ===
+                    'success'
                       ? '#00C48C'
                       : '#FF8A8A',
-                  fontSize: '13px',
+                  fontSize:
+                    '13px',
                 }}
               >
                 {message}
@@ -634,8 +962,12 @@ export default function Reserver() {
             )}
 
             <button
-              onClick={handleContinue}
-              disabled={!soldeSuffisant}
+              onClick={
+                handleContinue
+              }
+              disabled={
+                !soldeSuffisant
+              }
               style={{
                 width: '100%',
                 padding: '15px',
@@ -644,13 +976,16 @@ export default function Reserver() {
                     ? '#FF5C00'
                     : '#333',
                 border: 'none',
-                borderRadius: '14px',
+                borderRadius:
+                  '14px',
                 color:
                   soldeSuffisant
                     ? 'white'
                     : '#777',
-                fontWeight: '700',
-                fontSize: '14px',
+                fontWeight:
+                  '700',
+                fontSize:
+                  '14px',
                 cursor:
                   soldeSuffisant
                     ? 'pointer'
@@ -665,28 +1000,39 @@ export default function Reserver() {
             {!soldeSuffisant && (
               <button
                 onClick={() =>
-                  router.push('/wallet')
+                  router.push(
+                    '/wallet'
+                  )
                 }
                 style={{
                   width: '100%',
                   padding: '13px',
-                  background: 'transparent',
+                  background:
+                    'transparent',
                   border:
                     '1px solid #2A2A2A',
-                  borderRadius: '14px',
-                  color: 'white',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  marginTop: '10px',
+                  borderRadius:
+                    '14px',
+                  color:
+                    'white',
+                  fontSize:
+                    '13px',
+                  cursor:
+                    'pointer',
+                  marginTop:
+                    '10px',
                 }}
               >
-                💰 Aller au portefeuille
+                💰 Aller au
+                portefeuille
               </button>
             )}
           </>
         )}
 
-        {/* ÉTAPE 2 */}
+        {/* =================================================
+            ÉTAPE 2
+        ================================================= */}
 
         {etape === 2 && (
           <>
@@ -695,7 +1041,8 @@ export default function Reserver() {
                 background: '#1A1A1A',
                 borderRadius: '16px',
                 padding: '20px',
-                border: '1px solid #2A2A2A',
+                border:
+                  '1px solid #2A2A2A',
                 marginBottom: '20px',
               }}
             >
@@ -703,388 +1050,624 @@ export default function Reserver() {
                 style={{
                   fontSize: '14px',
                   fontWeight: '700',
-                  marginBottom: '16px',
+                  marginBottom:
+                    '16px',
                 }}
               >
-                Récapitulatif
+                Vérification
+                avant réservation
               </div>
 
               {[
                 {
-                  label: 'Article',
-                  value: promo.titre,
-                },
-                {
-                  label: 'Vendeur',
+                  label:
+                    'Article',
                   value:
-                    promo.profiles?.nom,
+                    promo.titre,
                 },
                 {
-                  label: 'Paiement',
+                  label:
+                    'Vendeur',
                   value:
-                    'Portefeuille Promo’s World',
+                    promo.profiles
+                      ?.nom ||
+                    'Vendeur',
                 },
                 {
-                  label: 'Solde actuel',
+                  label:
+                    'Prix total',
                   value: `${formatMoney(
-                    soldeDisponible
+                    prixTotal
                   )} FCFA`,
                 },
                 {
-                  label: 'Acompte à bloquer',
+                  label:
+                    'Acompte',
                   value: `${formatMoney(
                     acompte
                   )} FCFA`,
                 },
                 {
-                  label: 'Reste à payer',
+                  label:
+                    'Reste à payer',
                   value: `${formatMoney(
                     restant
                   )} FCFA`,
                 },
                 {
-                  label: 'Réservation valable',
-                  value: '3 mois',
+                  label:
+                    'Paiement',
+                  value:
+                    'Portefeuille Promo’s World',
                 },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    justifyContent:
-                      'space-between',
-                    marginBottom: '10px',
-                    fontSize: '13px',
-                    gap: '12px',
-                  }}
-                >
-                  <span
+                {
+                  label:
+                    'Validité',
+                  value:
+                    '3 mois',
+                },
+              ].map(
+                (
+                  item,
+                  i
+                ) => (
+                  <div
+                    key={i}
                     style={{
-                      color: '#888',
+                      display:
+                        'flex',
+                      justifyContent:
+                        'space-between',
+                      marginBottom:
+                        '10px',
+                      fontSize:
+                        '13px',
+                      gap: '12px',
                     }}
                   >
-                    {item.label}
-                  </span>
+                    <span
+                      style={{
+                        color:
+                          '#888',
+                      }}
+                    >
+                      {
+                        item.label
+                      }
+                    </span>
 
-                  <span
-                    style={{
-                      fontWeight: '600',
-                      maxWidth: '55%',
-                      textAlign: 'right',
-                    }}
-                  >
-                    {item.value}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      style={{
+                        fontWeight:
+                          '600',
+                        maxWidth:
+                          '60%',
+                        textAlign:
+                          'right',
+                      }}
+                    >
+                      {
+                        item.value
+                      }
+                    </span>
+                  </div>
+                )
+              )}
             </div>
+
+            {/* INFORMATION PROCESSUS */}
 
             <div
               style={{
                 background:
-                  'rgba(0,196,140,0.08)',
-                borderRadius: '12px',
-                padding: '12px 14px',
+                  'rgba(255,92,0,0.08)',
+                borderRadius:
+                  '12px',
+                padding:
+                  '13px 14px',
                 border:
-                  '1px solid rgba(0,196,140,0.2)',
+                  '1px solid rgba(255,92,0,0.2)',
                 fontSize: '12px',
-                color: '#888',
-                marginBottom: '20px',
-                lineHeight: '1.6',
+                color: '#aaa',
+                marginBottom:
+                  '12px',
+                lineHeight:
+                  '1.6',
               }}
             >
-              🔒 Ton acompte sera prélevé de ton
-              portefeuille et placé dans les{' '}
-              <strong style={{ color: '#00C48C' }}>
-                fonds bloqués
+              <strong
+                style={{
+                  color:
+                    '#FF5C00',
+                }}
+              >
+                Après confirmation :
+              </strong>
+              <br />
+              • Ton acompte de{' '}
+              <strong
+                style={{
+                  color:
+                    'white',
+                }}
+              >
+                {formatMoney(
+                  acompte
+                )}{' '}
+                FCFA
               </strong>{' '}
-              jusqu’à la finalisation de la
-              réservation.
+              sera bloqué.
+              <br />
+              • Le vendeur aura
+              <strong
+                style={{
+                  color:
+                    'white',
+                }}
+              >
+                {' '}
+                36 heures
+              </strong>{' '}
+              pour accepter ou
+              refuser.
+              <br />
+              • Si le vendeur
+              accepte, tu pourras
+              payer le solde depuis
+              ta réservation.
+              <br />
+              • Le solde devra être
+              payé avant la suite du
+              processus d'expédition.
             </div>
+
+            {/* MESSAGE */}
 
             {message && (
               <div
                 style={{
                   padding: '12px',
-                  borderRadius: '10px',
-                  marginBottom: '16px',
+                  borderRadius:
+                    '10px',
+                  marginBottom:
+                    '16px',
                   background:
                     'rgba(255,60,60,0.1)',
                   border:
                     '1px solid #FF3C3C',
-                  color: '#FF8A8A',
-                  fontSize: '13px',
+                  color:
+                    '#FF8A8A',
+                  fontSize:
+                    '13px',
                 }}
               >
                 {message}
               </div>
             )}
 
+            {/* CONFIRMATION */}
+
             <button
-              onClick={handleReserver}
-              disabled={processing}
+              onClick={
+                handleReserver
+              }
+              disabled={
+                processing
+              }
               style={{
                 width: '100%',
                 padding: '15px',
-                background: processing
-                  ? '#333'
-                  : '#FF5C00',
+                background:
+                  processing
+                    ? '#333'
+                    : '#FF5C00',
                 border: 'none',
-                borderRadius: '14px',
+                borderRadius:
+                  '14px',
                 color: 'white',
-                fontWeight: '700',
-                fontSize: '14px',
-                cursor: processing
-                  ? 'not-allowed'
-                  : 'pointer',
-                marginBottom: '10px',
+                fontWeight:
+                  '700',
+                fontSize:
+                  '14px',
+                cursor:
+                  processing
+                    ? 'not-allowed'
+                    : 'pointer',
+                marginBottom:
+                  '10px',
               }}
             >
               {processing
                 ? 'Traitement...'
-                : `Confirmer la réservation — ${formatMoney(
+                : `Confirmer — bloquer ${formatMoney(
                     acompte
                   )} FCFA`}
             </button>
 
             <button
-              onClick={() => setEtape(1)}
-              disabled={processing}
+              onClick={() =>
+                setEtape(1)
+              }
+              disabled={
+                processing
+              }
               style={{
                 width: '100%',
                 padding: '13px',
-                background: 'transparent',
+                background:
+                  'transparent',
                 border:
                   '1px solid #2A2A2A',
-                borderRadius: '14px',
+                borderRadius:
+                  '14px',
                 color: '#888',
-                fontSize: '13px',
-                cursor: processing
-                  ? 'not-allowed'
-                  : 'pointer',
+                fontSize:
+                  '13px',
+                cursor:
+                  processing
+                    ? 'not-allowed'
+                    : 'pointer',
               }}
             >
-              Modifier
+              ← Modifier
             </button>
           </>
         )}
 
-        {/* ÉTAPE 3 */}
+        {/* =================================================
+            ÉTAPE 3
+        ================================================= */}
 
-        {etape === 3 && reservation && (
-          <>
-            <div
-              style={{
-                textAlign: 'center',
-                padding: '20px 0 28px',
-              }}
-            >
+        {etape === 3 &&
+          reservation && (
+            <>
               <div
                 style={{
-                  fontSize: '60px',
-                  marginBottom: '16px',
-                }}
-              >
-                🎉
-              </div>
-
-              <div
-                style={{
-                  fontSize: '20px',
-                  fontWeight: '800',
-                  marginBottom: '8px',
-                }}
-              >
-                Réservation confirmée !
-              </div>
-
-              <div
-                style={{
-                  fontSize: '13px',
-                  color: '#888',
-                  lineHeight: '1.6',
-                }}
-              >
-                Ton acompte de{' '}
-                <strong
-                  style={{
-                    color: '#FF5C00',
-                  }}
-                >
-                  {formatMoney(acompte)} FCFA
-                </strong>{' '}
-                a été prélevé de ton portefeuille
-                et placé dans les fonds bloqués.
-                <br />
-                Tu as 3 mois pour finaliser
-                l’achat.
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: '#1A1A1A',
-                borderRadius: '16px',
-                border:
-                  '1px solid #2A2A2A',
-                overflow: 'hidden',
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  padding: '16px',
-                  borderBottom:
-                    '1px solid #222',
+                  textAlign:
+                    'center',
+                  padding:
+                    '20px 0 28px',
                 }}
               >
                 <div
                   style={{
-                    fontSize: '11px',
-                    color: '#888',
-                    marginBottom: '4px',
+                    fontSize:
+                      '60px',
+                    marginBottom:
+                      '16px',
                   }}
                 >
-                  ARTICLE
+                  🎉
                 </div>
 
                 <div
                   style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
+                    fontSize:
+                      '20px',
+                    fontWeight:
+                      '800',
+                    marginBottom:
+                      '8px',
                   }}
                 >
-                  {promo.titre}
+                  Réservation
+                  créée !
                 </div>
 
                 <div
                   style={{
-                    fontSize: '12px',
-                    color: '#888',
+                    fontSize:
+                      '13px',
+                    color:
+                      '#888',
+                    lineHeight:
+                      '1.6',
                   }}
                 >
-                  {promo.profiles?.nom}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: '16px',
-                }}
-              >
-                {[
-                  {
-                    label: 'Acompte bloqué',
-                    value: `✓ ${formatMoney(
-                      acompte
-                    )} FCFA`,
-                    color: '#00C48C',
-                  },
-                  {
-                    label: 'Nouveau solde disponible',
-                    value: `${formatMoney(
-                      wallet?.solde_disponible
-                    )} FCFA`,
-                  },
-                  {
-                    label: 'Fonds bloqués',
-                    value: `${formatMoney(
-                      wallet?.solde_bloque
-                    )} FCFA`,
-                    color: '#FF5C00',
-                  },
-                  {
-                    label: 'Reste à payer',
-                    value: `${formatMoney(
-                      restant
-                    )} FCFA`,
-                  },
-                  {
-                    label: 'Valable jusqu’au',
-                    value: new Date(
-                      reservation.date_expiration
-                    ).toLocaleDateString(
-                      'fr-FR'
-                    ),
-                    color: '#FF5C00',
-                  },
-                ].map((item, i) => (
-                  <div
-                    key={i}
+                  Ton acompte de{' '}
+                  <strong
                     style={{
-                      display: 'flex',
-                      justifyContent:
-                        'space-between',
-                      marginBottom:
-                        i < 4 ? '8px' : '0',
-                      fontSize: '13px',
+                      color:
+                        '#FF5C00',
                     }}
                   >
-                    <span
-                      style={{
-                        color: '#888',
-                      }}
-                    >
-                      {item.label}
-                    </span>
-
-                    <span
-                      style={{
-                        fontWeight: '700',
-                        color:
-                          item.color ||
-                          'white',
-                      }}
-                    >
-                      {item.value}
-                    </span>
-                  </div>
-                ))}
+                    {formatMoney(
+                      acompte
+                    )}{' '}
+                    FCFA
+                  </strong>{' '}
+                  a été bloqué
+                  dans ton
+                  portefeuille.
+                </div>
               </div>
-            </div>
 
-            <button
-              onClick={() =>
-                router.push('/reservations')
-              }
-              style={{
-                width: '100%',
-                padding: '14px',
-                background: '#FF5C00',
-                border: 'none',
-                borderRadius: '14px',
-                color: 'white',
-                fontWeight: '700',
-                fontSize: '14px',
-                cursor: 'pointer',
-                marginBottom: '10px',
-              }}
-            >
-              Voir mes réservations
-            </button>
+              {/* STATUT */}
 
-            <button
-              onClick={() =>
-                router.push(
-                  `/chat/${promo.vendeur_id}?promo=${id}`
-                )
-              }
-              style={{
-                width: '100%',
-                padding: '13px',
-                background: '#1A1A1A',
-                border:
-                  '1px solid #2A2A2A',
-                borderRadius: '14px',
-                color: 'white',
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
-              💬 Contacter le vendeur
-            </button>
-          </>
-        )}
+              <div
+                style={{
+                  background:
+                    '#1A1A1A',
+                  borderRadius:
+                    '16px',
+                  border:
+                    '1px solid #2A2A2A',
+                  overflow:
+                    'hidden',
+                  marginBottom:
+                    '16px',
+                }}
+              >
+                <div
+                  style={{
+                    padding:
+                      '16px',
+                    borderBottom:
+                      '1px solid #222',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize:
+                        '11px',
+                      color:
+                        '#888',
+                      marginBottom:
+                        '4px',
+                    }}
+                  >
+                    STATUT
+                  </div>
+
+                  <div
+                    style={{
+                      display:
+                        'inline-block',
+                      background:
+                        'rgba(255,92,0,0.12)',
+                      color:
+                        '#FF8A5C',
+                      borderRadius:
+                        '999px',
+                      padding:
+                        '7px 12px',
+                      fontSize:
+                        '12px',
+                      fontWeight:
+                        '700',
+                    }}
+                  >
+                    {reservation.statut ===
+                    'acompte_paye'
+                      ? '⏳ En attente du vendeur'
+                      : reservation.statut ||
+                        'En attente'}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding:
+                      '16px',
+                  }}
+                >
+                  {[
+                    {
+                      label:
+                        'Article',
+                      value:
+                        promo.titre,
+                    },
+                    {
+                      label:
+                        'Vendeur',
+                      value:
+                        promo
+                          .profiles
+                          ?.nom ||
+                        'Vendeur',
+                    },
+                    {
+                      label:
+                        'Acompte bloqué',
+                      value: `${formatMoney(
+                        acompte
+                      )} FCFA`,
+                      color:
+                        '#00C48C',
+                    },
+                    {
+                      label:
+                        'Reste à payer',
+                      value: `${formatMoney(
+                        restant
+                      )} FCFA`,
+                    },
+                    {
+                      label:
+                        'Décision vendeur avant',
+                      value:
+                        formatDate(
+                          reservation.date_limite_acceptation
+                        ),
+                      color:
+                        '#FF5C00',
+                    },
+                    {
+                      label:
+                        'Expiration réservation',
+                      value:
+                        formatDate(
+                          reservation.date_limite_solde ||
+                            reservation.date_expiration
+                        ),
+                      color:
+                        '#FF5C00',
+                    },
+                  ].map(
+                    (
+                      item,
+                      i
+                    ) => (
+                      <div
+                        key={i}
+                        style={{
+                          display:
+                            'flex',
+                          justifyContent:
+                            'space-between',
+                          marginBottom:
+                            i <
+                            5
+                              ? '9px'
+                              : '0',
+                          fontSize:
+                            '13px',
+                          gap: '12px',
+                        }}
+                      >
+                        <span
+                          style={{
+                            color:
+                              '#888',
+                          }}
+                        >
+                          {
+                            item.label
+                          }
+                        </span>
+
+                        <span
+                          style={{
+                            fontWeight:
+                              '700',
+                            color:
+                              item.color ||
+                              'white',
+                            textAlign:
+                              'right',
+                            maxWidth:
+                              '60%',
+                          }}
+                        >
+                          {
+                            item.value
+                          }
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+
+              {/* EXPLICATION */}
+
+              <div
+                style={{
+                  background:
+                    'rgba(0,196,140,0.08)',
+                  borderRadius:
+                    '12px',
+                  padding:
+                    '13px 14px',
+                  border:
+                    '1px solid rgba(0,196,140,0.2)',
+                  fontSize:
+                    '12px',
+                  color:
+                    '#999',
+                  marginBottom:
+                    '20px',
+                  lineHeight:
+                    '1.6',
+                }}
+              >
+                🔒 Ton acompte reste
+                protégé dans les fonds
+                bloqués.
+
+                <br />
+                <br />
+
+                Le vendeur doit maintenant
+                accepter ou refuser ta
+                réservation dans le délai
+                prévu.
+
+                <br />
+                <br />
+
+                Tu n'as rien d'autre à
+                payer pour le moment.
+                Si le vendeur accepte,
+                tu pourras ensuite payer
+                le solde depuis ta page
+                de réservation.
+              </div>
+
+              {/* RÉSERVATIONS */}
+
+              <button
+                onClick={() =>
+                  router.push(
+                    '/reservations'
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding:
+                    '14px',
+                  background:
+                    '#FF5C00',
+                  border: 'none',
+                  borderRadius:
+                    '14px',
+                  color: 'white',
+                  fontWeight:
+                    '700',
+                  fontSize:
+                    '14px',
+                  cursor:
+                    'pointer',
+                  marginBottom:
+                    '10px',
+                }}
+              >
+                Voir mes
+                réservations
+              </button>
+
+              {/* CHAT */}
+
+              <button
+                onClick={() =>
+                  router.push(
+                    `/chat/${promo.vendeur_id}?promo=${id}`
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding:
+                    '13px',
+                  background:
+                    '#1A1A1A',
+                  border:
+                    '1px solid #2A2A2A',
+                  borderRadius:
+                    '14px',
+                  color:
+                    'white',
+                  fontSize:
+                    '13px',
+                  cursor:
+                    'pointer',
+                }}
+              >
+                💬 Contacter le
+                vendeur
+              </button>
+            </>
+          )}
       </div>
     </div>
   )
