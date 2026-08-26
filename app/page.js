@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useLanguage } from '@/lib/LanguageContext'
 
 export default function Home() {
   const router = useRouter()
+  const { language, setLanguage, t, ready } = useLanguage()
 
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -13,6 +15,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('Toutes')
+  const [mobileMenu, setMobileMenu] = useState(false)
 
   useEffect(() => {
     initPage()
@@ -70,11 +73,13 @@ export default function Home() {
   }
 
   const formatMoney = (value) => {
-    return Number(value || 0).toLocaleString('fr-FR')
+    return Number(value || 0).toLocaleString(
+      language === 'fr' ? 'fr-FR' : 'en-US'
+    )
   }
 
   const categories = [
-    'Toutes',
+    t.all,
     ...Array.from(
       new Set(
         promotions
@@ -84,6 +89,11 @@ export default function Home() {
     ),
   ]
 
+  const selectedCategory =
+    category === 'Toutes' || category === 'All'
+      ? t.all
+      : category
+
   const filteredPromotions = promotions.filter((promo) => {
     const matchesSearch =
       !search.trim() ||
@@ -92,109 +102,413 @@ export default function Home() {
       promo.categorie?.toLowerCase().includes(search.toLowerCase())
 
     const matchesCategory =
-      category === 'Toutes' ||
-      promo.categorie === category
+      selectedCategory === t.all ||
+      promo.categorie === selectedCategory
 
     return matchesSearch && matchesCategory
   })
 
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
+        <div className="text-sm text-gray-500">
+          Chargement...
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0A0A0A',
-        color: 'white',
-        fontFamily: 'sans-serif',
-      }}
-    >
+    <div className="home-page">
+      <style jsx>{`
+        .home-page {
+          min-height: 100vh;
+          background: #0a0a0a;
+          color: white;
+          font-family: sans-serif;
+          overflow-x: hidden;
+        }
+
+        .container {
+          width: 100%;
+          max-width: 1200px;
+          margin: 0 auto;
+          box-sizing: border-box;
+        }
+
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          background: rgba(10, 10, 10, 0.96);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid #1e1e1e;
+        }
+
+        .header-inner {
+          min-height: 68px;
+          padding: 12px 20px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          box-sizing: border-box;
+        }
+
+        .logo {
+          flex-shrink: 0;
+          background: none;
+          border: none;
+          color: #ff5c00;
+          font-size: 19px;
+          font-weight: 900;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .search-wrapper {
+          flex: 1;
+          max-width: 560px;
+          margin: 0 auto;
+        }
+
+        .search-input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 11px 14px;
+          background: #151515;
+          border: 1px solid #2a2a2a;
+          border-radius: 12px;
+          color: white;
+          outline: none;
+          font-size: 13px;
+        }
+
+        .desktop-navigation {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .language-button {
+          padding: 9px 11px;
+          background: #151515;
+          border: 1px solid #2a2a2a;
+          border-radius: 10px;
+          color: white;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .mobile-menu-button {
+          display: none;
+          width: 40px;
+          height: 40px;
+          background: #151515;
+          border: 1px solid #2a2a2a;
+          border-radius: 10px;
+          color: white;
+          cursor: pointer;
+          font-size: 20px;
+        }
+
+        .mobile-menu {
+          display: none;
+        }
+
+        .hero-section {
+          padding: 55px 20px 30px;
+        }
+
+        .hero {
+          background:
+            linear-gradient(
+              135deg,
+              #171717 0%,
+              #111 60%,
+              #18100a 100%
+            );
+          border: 1px solid #292929;
+          border-radius: 24px;
+          padding: 35px 28px;
+        }
+
+        .hero-title {
+          margin: 0 0 12px;
+          font-size: clamp(30px, 5vw, 52px);
+          line-height: 1.05;
+          font-weight: 900;
+        }
+
+        .hero-description {
+          margin: 0;
+          max-width: 650px;
+          color: #999;
+          font-size: 14px;
+          line-height: 1.7;
+        }
+
+        .hero-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 22px;
+        }
+
+        .categories-section {
+          padding: 10px 20px 20px;
+        }
+
+        .categories {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          padding-bottom: 5px;
+          scrollbar-width: none;
+        }
+
+        .categories::-webkit-scrollbar {
+          display: none;
+        }
+
+        .promotions-section {
+          padding: 10px 20px 50px;
+        }
+
+        .promotions-heading {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .promotions-grid {
+          display: grid;
+          grid-template-columns: repeat(
+            auto-fill,
+            minmax(220px, 1fr)
+          );
+          gap: 14px;
+        }
+
+        .promo-card {
+          min-width: 0;
+          background: #151515;
+          border: 1px solid #252525;
+          border-radius: 18px;
+          overflow: hidden;
+          cursor: pointer;
+          transition: transform 0.15s ease,
+            border-color 0.15s ease;
+        }
+
+        .promo-card:hover {
+          transform: translateY(-2px);
+          border-color: #3a3a3a;
+        }
+
+        .promo-image {
+          height: 190px;
+          background: #202020;
+          overflow: hidden;
+        }
+
+        .promo-image img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .promo-content {
+          padding: 14px;
+        }
+
+        .promo-price-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .footer {
+          border-top: 1px solid #1e1e1e;
+          padding: 25px 20px;
+          color: #666;
+          font-size: 11px;
+          text-align: center;
+        }
+
+        .primary-button {
+          padding: 12px 18px;
+          background: #ff5c00;
+          border: none;
+          border-radius: 12px;
+          color: white;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .secondary-button {
+          padding: 12px 18px;
+          background: #1a1a1a;
+          border: 1px solid #2a2a2a;
+          border-radius: 12px;
+          color: white;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        @media (max-width: 800px) {
+          .header-inner {
+            padding: 10px 14px;
+            gap: 10px;
+          }
+
+          .desktop-navigation {
+            display: none;
+          }
+
+          .mobile-menu-button {
+            display: block;
+            flex-shrink: 0;
+          }
+
+          .search-wrapper {
+            max-width: none;
+          }
+
+          .mobile-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px 14px 16px;
+            border-top: 1px solid #1e1e1e;
+            background: #0d0d0d;
+          }
+
+          .hero-section {
+            padding: 24px 14px 20px;
+          }
+
+          .hero {
+            border-radius: 18px;
+            padding: 28px 20px;
+          }
+
+          .categories-section {
+            padding: 8px 14px 18px;
+          }
+
+          .promotions-section {
+            padding: 8px 14px 35px;
+          }
+
+          .promotions-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+
+          .promo-image {
+            height: 160px;
+          }
+
+          .promo-content {
+            padding: 12px;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .logo {
+            font-size: 17px;
+          }
+
+          .search-input {
+            font-size: 12px;
+            padding: 10px 11px;
+          }
+
+          .hero-title {
+            font-size: 34px;
+          }
+
+          .hero-description {
+            font-size: 13px;
+          }
+
+          .hero-actions {
+            flex-direction: column;
+          }
+
+          .hero-actions button {
+            width: 100%;
+          }
+
+          .promotions-heading {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .promotions-heading button {
+            width: 100%;
+          }
+
+          .promotions-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .promo-image {
+            height: 210px;
+          }
+        }
+      `}</style>
+
       {/* HEADER */}
-      <header
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
-          background: 'rgba(10,10,10,0.96)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #1E1E1E',
-        }}
-      >
-        <div
-          style={{
-            maxWidth: '1200px',
-            margin: '0 auto',
-            padding: '14px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px',
-          }}
-        >
-          {/* LOGO */}
+      <header className="header">
+        <div className="container header-inner">
           <button
             onClick={() => router.push('/')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#FF5C00',
-              fontSize: '19px',
-              fontWeight: '900',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            className="logo"
           >
             Promo's<span style={{ color: 'white' }}>World</span>
           </button>
 
-          {/* SEARCH */}
-          <div
-            style={{
-              flex: 1,
-              maxWidth: '560px',
-              margin: '0 auto',
-            }}
-          >
+          <div className="search-wrapper">
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher une promotion..."
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                padding: '11px 14px',
-                background: '#151515',
-                border: '1px solid #2A2A2A',
-                borderRadius: '12px',
-                color: 'white',
-                outline: 'none',
-                fontSize: '13px',
-              }}
+              placeholder={t.searchPlaceholder}
+              className="search-input"
             />
           </div>
 
-          {/* NAVIGATION */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
+          <div className="desktop-navigation">
+            <button
+              className="language-button"
+              onClick={() =>
+                setLanguage(language === 'fr' ? 'en' : 'fr')
+              }
+            >
+              {language === 'fr' ? '🇬🇧 EN' : '🇫🇷 FR'}
+            </button>
+
+            <button
+              onClick={() => router.push('/a-propos')}
+              className="language-button"
+            >
+              ℹ️
+            </button>
+
             {user ? (
               <>
                 <button
                   onClick={() => router.push('/dashboard')}
-                  style={{
-                    padding: '9px 12px',
-                    background: '#1A1A1A',
-                    border: '1px solid #2A2A2A',
-                    borderRadius: '10px',
-                    color: 'white',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                  }}
+                  className="language-button"
                 >
-                  Dashboard
+                  {t.dashboard}
                 </button>
 
                 <button
@@ -218,41 +532,99 @@ export default function Home() {
             ) : (
               <button
                 onClick={() => router.push('/auth')}
+                className="primary-button"
                 style={{
                   padding: '10px 14px',
-                  background: '#FF5C00',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: 'white',
-                  cursor: 'pointer',
                   fontSize: '12px',
-                  fontWeight: '800',
                 }}
               >
-                Se connecter
+                {t.login}
               </button>
             )}
           </div>
+
+          <button
+            className="mobile-menu-button"
+            onClick={() => setMobileMenu(!mobileMenu)}
+            aria-label="Menu"
+          >
+            {mobileMenu ? '×' : '☰'}
+          </button>
         </div>
+
+        {mobileMenu && (
+          <div className="mobile-menu">
+            <button
+              className="secondary-button"
+              onClick={() =>
+                setLanguage(language === 'fr' ? 'en' : 'fr')
+              }
+            >
+              {language === 'fr'
+                ? '🇬🇧 English'
+                : '🇫🇷 Français'}
+            </button>
+
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setMobileMenu(false)
+                router.push('/a-propos')
+              }}
+            >
+              ℹ️ {t.discoverPromoWorld}
+            </button>
+
+            {user ? (
+              <>
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    setMobileMenu(false)
+                    router.push('/dashboard')
+                  }}
+                >
+                  {t.dashboard}
+                </button>
+
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    setMobileMenu(false)
+                    router.push('/profil')
+                  }}
+                >
+                  👤 {profile?.nom || 'Profil'}
+                </button>
+
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    setMobileMenu(false)
+                    handleLogout()
+                  }}
+                >
+                  Déconnexion
+                </button>
+              </>
+            ) : (
+              <button
+                className="primary-button"
+                onClick={() => {
+                  setMobileMenu(false)
+                  router.push('/auth')
+                }}
+              >
+                {t.login}
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
       {/* HERO */}
-      <section
-        style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          padding: '55px 20px 30px',
-        }}
-      >
-        <div
-          style={{
-            background:
-              'linear-gradient(135deg, #171717 0%, #111 60%, #18100A 100%)',
-            border: '1px solid #292929',
-            borderRadius: '24px',
-            padding: '35px 28px',
-          }}
-        >
+      <section className="container hero-section">
+        <div className="hero">
           <div
             style={{
               display: 'inline-block',
@@ -266,70 +638,43 @@ export default function Home() {
               marginBottom: '14px',
             }}
           >
-            🔥 LES BONNES AFFAIRES
+            {t.discoverBadge}
           </div>
 
-          <h1
-            style={{
-              margin: '0 0 12px',
-              fontSize: 'clamp(30px, 5vw, 52px)',
-              lineHeight: 1.05,
-              fontWeight: '900',
-            }}
-          >
-            Trouve les meilleures
-            <span style={{ color: '#FF5C00' }}> promos.</span>
+          <h1 className="hero-title">
+            {t.heroTitle}
+            <span style={{ color: '#FF5C00' }}>
+              {t.heroTitleAccent}
+            </span>
           </h1>
 
-          <p
-            style={{
-              margin: 0,
-              maxWidth: '650px',
-              color: '#999',
-              fontSize: '14px',
-              lineHeight: 1.7,
-            }}
-          >
-            Découvre des offres proposées par des vendeurs,
-            réserve un article ou achète directement en toute sécurité.
+          <p className="hero-description">
+            {t.heroDescription}
           </p>
 
-          {!user && (
+          <div className="hero-actions">
+            {!user && (
+              <button
+                onClick={() => router.push('/auth')}
+                className="primary-button"
+              >
+                {t.start}
+              </button>
+            )}
+
             <button
-              onClick={() => router.push('/auth')}
-              style={{
-                marginTop: '22px',
-                padding: '12px 18px',
-                background: '#FF5C00',
-                border: 'none',
-                borderRadius: '12px',
-                color: 'white',
-                fontWeight: '800',
-                cursor: 'pointer',
-              }}
+              onClick={() => router.push('/a-propos')}
+              className="secondary-button"
             >
-              Commencer
+              ℹ️ {t.discoverPromoWorld}
             </button>
-          )}
+          </div>
         </div>
       </section>
 
       {/* CATEGORIES */}
-      <section
-        style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          padding: '10px 20px 20px',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            overflowX: 'auto',
-            paddingBottom: '5px',
-          }}
-        >
+      <section className="container categories-section">
+        <div className="categories">
           {categories.map((item) => (
             <button
               key={item}
@@ -339,15 +684,15 @@ export default function Home() {
                 padding: '9px 14px',
                 borderRadius: '999px',
                 border:
-                  category === item
+                  selectedCategory === item
                     ? '1px solid #FF5C00'
                     : '1px solid #2A2A2A',
                 background:
-                  category === item
+                  selectedCategory === item
                     ? 'rgba(255,92,0,0.12)'
                     : '#151515',
                 color:
-                  category === item
+                  selectedCategory === item
                     ? '#FF7A2A'
                     : '#AAA',
                 fontSize: '12px',
@@ -362,22 +707,8 @@ export default function Home() {
       </section>
 
       {/* PROMOTIONS */}
-      <main
-        style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          padding: '10px 20px 50px',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px',
-          }}
-        >
+      <main className="container promotions-section">
+        <div className="promotions-heading">
           <div>
             <div
               style={{
@@ -385,7 +716,7 @@ export default function Home() {
                 fontWeight: '900',
               }}
             >
-              Promotions
+              {t.promotions}
             </div>
 
             <div
@@ -395,26 +726,23 @@ export default function Home() {
                 marginTop: '4px',
               }}
             >
-              {filteredPromotions.length} offre
-              {filteredPromotions.length > 1 ? 's' : ''}
+              {filteredPromotions.length}{' '}
+              {filteredPromotions.length > 1
+                ? t.offers
+                : t.offer}
             </div>
           </div>
 
           {user && (
             <button
               onClick={() => router.push('/promo')}
+              className="secondary-button"
               style={{
                 padding: '9px 12px',
-                background: '#1A1A1A',
-                border: '1px solid #2A2A2A',
-                borderRadius: '10px',
-                color: 'white',
                 fontSize: '12px',
-                fontWeight: '700',
-                cursor: 'pointer',
               }}
             >
-              + Publier une promo
+              {t.publishPromo}
             </button>
           )}
         </div>
@@ -427,7 +755,7 @@ export default function Home() {
               color: '#777',
             }}
           >
-            Chargement des promotions...
+            {t.loading}
           </div>
         ) : filteredPromotions.length === 0 ? (
           <div
@@ -455,7 +783,7 @@ export default function Home() {
                 marginBottom: '6px',
               }}
             >
-              Aucune promotion trouvée
+              {t.noPromotion}
             </div>
 
             <div
@@ -464,18 +792,11 @@ export default function Home() {
                 color: '#777',
               }}
             >
-              Essaie une autre recherche ou une autre catégorie.
+              {t.tryAgain}
             </div>
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns:
-                'repeat(auto-fill, minmax(220px, 1fr))',
-              gap: '14px',
-            }}
-          >
+          <div className="promotions-grid">
             {filteredPromotions.map((promo) => {
               const stock = Number(promo.stock || 0)
 
@@ -485,33 +806,13 @@ export default function Home() {
                   onClick={() =>
                     router.push(`/promo/${promo.id}`)
                   }
-                  style={{
-                    background: '#151515',
-                    border: '1px solid #252525',
-                    borderRadius: '18px',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    transition: 'transform 0.15s ease',
-                  }}
+                  className="promo-card"
                 >
-                  {/* IMAGE */}
-                  <div
-                    style={{
-                      height: '190px',
-                      background: '#202020',
-                      overflow: 'hidden',
-                    }}
-                  >
+                  <div className="promo-image">
                     {promo.photo_url ? (
                       <img
                         src={promo.photo_url}
-                        alt={promo.titre || 'Promotion'}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          display: 'block',
-                        }}
+                        alt={promo.titre || t.promotions}
                       />
                     ) : (
                       <div
@@ -529,8 +830,7 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* CONTENT */}
-                  <div style={{ padding: '14px' }}>
+                  <div className="promo-content">
                     <div
                       style={{
                         fontSize: '14px',
@@ -541,7 +841,7 @@ export default function Home() {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {promo.titre || 'Promotion'}
+                      {promo.titre || t.promotions}
                     </div>
 
                     <div
@@ -551,20 +851,13 @@ export default function Home() {
                         marginBottom: '10px',
                       }}
                     >
-                      {promo.profiles?.nom || 'Vendeur'}
+                      {promo.profiles?.nom || t.seller}
                       {promo.categorie
                         ? ` · ${promo.categorie}`
                         : ''}
                     </div>
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '10px',
-                      }}
-                    >
+                    <div className="promo-price-row">
                       <div
                         style={{
                           color: '#FF5C00',
@@ -583,11 +876,16 @@ export default function Home() {
                               ? '#00C48C'
                               : '#FF3C3C',
                           fontWeight: '700',
+                          textAlign: 'right',
                         }}
                       >
                         {stock > 0
-                          ? `${stock} disponible${stock > 1 ? 's' : ''}`
-                          : 'Épuisé'}
+                          ? `${stock} ${
+                              stock > 1
+                                ? t.availables
+                                : t.available
+                            }`
+                          : t.soldOut}
                       </div>
                     </div>
                   </div>
@@ -598,17 +896,8 @@ export default function Home() {
         )}
       </main>
 
-      {/* FOOTER */}
-      <footer
-        style={{
-          borderTop: '1px solid #1E1E1E',
-          padding: '25px 20px',
-          color: '#666',
-          fontSize: '11px',
-          textAlign: 'center',
-        }}
-      >
-        Promo's World · Marketplace de promotions
+      <footer className="footer">
+        {t.footer}
       </footer>
     </div>
   )
