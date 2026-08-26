@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
+import { useLanguage } from '@/lib/LanguageContext'
 
 export default function Acheter() {
   const router = useRouter()
   const { id } = useParams()
+  const { language, setLanguage, t, ready } = useLanguage()
 
   const [promo, setPromo] = useState(null)
   const [wallet, setWallet] = useState(null)
@@ -19,7 +21,9 @@ export default function Acheter() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    initPage()
+    if (id) {
+      initPage()
+    }
   }, [id])
 
   const initPage = async () => {
@@ -38,28 +42,34 @@ export default function Acheter() {
 
     setUser(authData.user)
 
-    const { data: promoData, error: promoError } = await supabase
-      .from('promotions')
-      .select(`
-        *,
-        profiles(nom, adresse)
-      `)
-      .eq('id', id)
-      .single()
+    const { data: promoData, error: promoError } =
+      await supabase
+        .from('promotions')
+        .select(`
+          *,
+          profiles(nom, adresse)
+        `)
+        .eq('id', id)
+        .single()
 
     if (promoError || !promoData) {
-      setError('Promotion introuvable.')
+      setError(
+        language === 'fr'
+          ? 'Promotion introuvable.'
+          : 'Promotion not found.'
+      )
       setLoading(false)
       return
     }
 
     setPromo(promoData)
 
-    const { data: walletData, error: walletError } = await supabase
-      .from('wallets')
-      .select('solde_disponible, solde_bloque')
-      .eq('user_id', authData.user.id)
-      .single()
+    const { data: walletData, error: walletError } =
+      await supabase
+        .from('wallets')
+        .select('solde_disponible, solde_bloque')
+        .eq('user_id', authData.user.id)
+        .single()
 
     if (walletError) {
       console.error('Erreur wallet:', walletError)
@@ -80,62 +90,83 @@ export default function Acheter() {
 
     try {
       if (promo.statut !== 'actif') {
-        setError('Cette promotion n’est plus active.')
+        setError(
+          language === 'fr'
+            ? 'Cette promotion n’est plus active.'
+            : 'This promotion is no longer active.'
+        )
         return
       }
 
       if (Number(promo.stock) <= 0) {
-        setError('Stock épuisé.')
+        setError(
+          language === 'fr'
+            ? 'Stock épuisé.'
+            : 'Out of stock.'
+        )
         return
       }
 
       const montantTotal = Number(promo.prix_promo)
 
-      if (!Number.isFinite(montantTotal) || montantTotal <= 0) {
-        setError('Montant de la promotion invalide.')
+      if (
+        !Number.isFinite(montantTotal) ||
+        montantTotal <= 0
+      ) {
+        setError(
+          language === 'fr'
+            ? 'Montant de la promotion invalide.'
+            : 'Invalid promotion amount.'
+        )
         return
       }
 
       if (
         wallet &&
-        Number(wallet.solde_disponible || 0) < montantTotal
+        Number(wallet.solde_disponible || 0) <
+          montantTotal
       ) {
         setError(
-          `Solde insuffisant. Il faut ${formatMoney(montantTotal)} FCFA disponibles dans ton portefeuille.`
+          language === 'fr'
+            ? `Solde insuffisant. Il faut ${formatMoney(
+                montantTotal
+              )} FCFA disponibles dans ton portefeuille.`
+            : `Insufficient balance. You need ${formatMoney(
+                montantTotal
+              )} FCFA available in your wallet.`
         )
         return
       }
 
-      /*
-       * IMPORTANT :
-       * Le montant n'est PAS envoyé au RPC.
-       *
-       * Le serveur récupère lui-même :
-       * - le prix
-       * - le vendeur
-       * - le stock
-       * - le wallet du client
-       *
-       * Cela empêche le navigateur de manipuler
-       * les montants financiers.
-       */
-      const { data, error: rpcError } = await supabase.rpc(
-        'create_direct_purchase_from_wallet',
-        {
-          p_promotion_id: promo.id,
-        }
-      )
+      const { data, error: rpcError } =
+        await supabase.rpc(
+          'create_direct_purchase_from_wallet',
+          {
+            p_promotion_id: promo.id,
+          }
+        )
 
       if (rpcError) {
-        console.error('Erreur achat direct:', rpcError)
-        setError(`Erreur lors de l'achat : ${rpcError.message}`)
+        console.error(
+          'Erreur achat direct:',
+          rpcError
+        )
+
+        setError(
+          language === 'fr'
+            ? `Erreur lors de l'achat : ${rpcError.message}`
+            : `Purchase error: ${rpcError.message}`
+        )
+
         return
       }
 
       if (!data?.success) {
         setError(
           data?.message ||
-          'L’achat n’a pas pu être effectué.'
+            (language === 'fr'
+              ? "L’achat n’a pas pu être effectué."
+              : 'The purchase could not be completed.')
         )
         return
       }
@@ -145,10 +176,16 @@ export default function Acheter() {
         data.id ||
         data.transactionId
 
-      setMessage('✅ Achat effectué. Les fonds sont maintenant bloqués.')
+      setMessage(
+        language === 'fr'
+          ? '✅ Achat effectué. Les fonds sont maintenant bloqués.'
+          : '✅ Purchase completed. The funds are now held securely.'
+      )
 
       if (transactionId) {
-        router.push(`/transactions?success=${transactionId}`)
+        router.push(
+          `/transactions?success=${transactionId}`
+        )
       } else {
         setTimeout(() => {
           router.push('/transactions')
@@ -156,9 +193,12 @@ export default function Acheter() {
       }
     } catch (err) {
       console.error(err)
+
       setError(
         err?.message ||
-        'Une erreur inattendue est survenue.'
+          (language === 'fr'
+            ? 'Une erreur inattendue est survenue.'
+            : 'An unexpected error occurred.')
       )
     } finally {
       setProcessing(false)
@@ -166,96 +206,113 @@ export default function Acheter() {
   }
 
   const formatMoney = (value) => {
-    return Number(value || 0).toLocaleString('fr-FR')
+    return Number(value || 0).toLocaleString(
+      language === 'fr' ? 'fr-FR' : 'en-US'
+    )
   }
 
-  if (loading) {
+  if (!ready || loading) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#0A0A0A',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#888',
-          fontFamily: 'sans-serif',
-        }}
-      >
-        Chargement...
+      <div className="loading-page">
+        <style jsx>{`
+          .loading-page {
+            min-height: 100vh;
+            background: #0a0a0a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            font-family: sans-serif;
+          }
+        `}</style>
+
+        {language === 'fr'
+          ? 'Chargement...'
+          : 'Loading...'}
       </div>
     )
   }
 
   if (!promo) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#0A0A0A',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px',
-          fontFamily: 'sans-serif',
-        }}
-      >
-        <div
-          style={{
-            textAlign: 'center',
-            maxWidth: '420px',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '40px',
-              marginBottom: '12px',
-            }}
-          >
-            ⚠️
+      <div className="error-page">
+        <style jsx>{`
+          .error-page {
+            min-height: 100vh;
+            background: #0a0a0a;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: sans-serif;
+            box-sizing: border-box;
+          }
+
+          .error-box {
+            text-align: center;
+            width: 100%;
+            max-width: 420px;
+          }
+
+          .error-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+          }
+
+          .error-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+          }
+
+          .error-message {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 20px;
+          }
+
+          button {
+            padding: 12px 18px;
+            background: #ff5c00;
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+          }
+        `}</style>
+
+        <div className="error-box">
+          <div className="error-icon">⚠️</div>
+
+          <div className="error-title">
+            {language === 'fr'
+              ? 'Promotion introuvable'
+              : 'Promotion not found'}
           </div>
 
-          <div
-            style={{
-              fontSize: '16px',
-              fontWeight: '700',
-              marginBottom: '8px',
-            }}
-          >
-            Promotion introuvable
+          <div className="error-message">
+            {error ||
+              (language === 'fr'
+                ? 'Cette promotion n’existe plus.'
+                : 'This promotion no longer exists.')}
           </div>
 
-          <div
-            style={{
-              color: '#888',
-              fontSize: '13px',
-              marginBottom: '20px',
-            }}
-          >
-            {error || 'Cette promotion n’existe plus.'}
-          </div>
-
-          <button
-            onClick={() => router.back()}
-            style={{
-              padding: '12px 18px',
-              background: '#FF5C00',
-              border: 'none',
-              borderRadius: '10px',
-              color: 'white',
-              fontWeight: '700',
-              cursor: 'pointer',
-            }}
-          >
-            Retour
+          <button onClick={() => router.back()}>
+            {language === 'fr'
+              ? 'Retour'
+              : 'Go back'}
           </button>
         </div>
       </div>
     )
   }
 
-  const montantTotal = Number(promo.prix_promo || 0)
+  const montantTotal = Number(
+    promo.prix_promo || 0
+  )
+
   const soldeDisponible = Number(
     wallet?.solde_disponible || 0
   )
@@ -263,150 +320,358 @@ export default function Acheter() {
   const soldeSuffisant =
     soldeDisponible >= montantTotal
 
+  const canBuy =
+    !processing &&
+    soldeSuffisant &&
+    promo.statut === 'actif' &&
+    Number(promo.stock) > 0
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0A0A0A',
-        color: 'white',
-        fontFamily: 'sans-serif',
-      }}
-    >
+    <div className="buy-page">
+      <style jsx>{`
+        .buy-page {
+          min-height: 100vh;
+          background: #0a0a0a;
+          color: white;
+          font-family: sans-serif;
+          overflow-x: hidden;
+        }
+
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          background: rgba(10, 10, 10, 0.97);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid #1e1e1e;
+        }
+
+        .header-inner {
+          width: 100%;
+          max-width: 760px;
+          margin: 0 auto;
+          min-height: 64px;
+          padding: 10px 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          box-sizing: border-box;
+        }
+
+        .back-button {
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          background: #1a1a1a;
+          border: 1px solid #2a2a2a;
+          border-radius: 10px;
+          color: white;
+          font-size: 16px;
+          cursor: pointer;
+        }
+
+        .header-title {
+          flex: 1;
+          min-width: 0;
+          font-size: 16px;
+          font-weight: 700;
+        }
+
+        .language-button {
+          padding: 8px 10px;
+          background: #151515;
+          border: 1px solid #2a2a2a;
+          border-radius: 9px;
+          color: white;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .content {
+          width: 100%;
+          max-width: 760px;
+          margin: 0 auto;
+          padding: 24px 16px 50px;
+          box-sizing: border-box;
+        }
+
+        .card {
+          background: #151515;
+          border: 1px solid #252525;
+          border-radius: 18px;
+          padding: 18px;
+          margin-bottom: 14px;
+          box-sizing: border-box;
+        }
+
+        .article-title {
+          font-size: 11px;
+          color: #888;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .promo-title {
+          font-size: 19px;
+          font-weight: 800;
+          line-height: 1.3;
+          margin-bottom: 8px;
+          word-break: break-word;
+        }
+
+        .seller {
+          font-size: 12px;
+          color: #888;
+          line-height: 1.6;
+        }
+
+        .stock {
+          margin-top: 10px;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .wallet-row,
+        .price-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+          font-size: 13px;
+        }
+
+        .wallet-row + .wallet-row {
+          margin-top: 10px;
+        }
+
+        .muted {
+          color: #888;
+        }
+
+        .wallet-balance {
+          font-weight: 800;
+          text-align: right;
+        }
+
+        .orange {
+          color: #ff5c00;
+          font-weight: 800;
+        }
+
+        .recap-title {
+          font-size: 15px;
+          font-weight: 800;
+          margin-bottom: 14px;
+        }
+
+        .info {
+          background: rgba(255, 92, 0, 0.08);
+          border: 1px solid rgba(255, 92, 0, 0.2);
+          border-radius: 12px;
+          padding: 13px 14px;
+          color: #999;
+          font-size: 12px;
+          line-height: 1.7;
+          margin-bottom: 14px;
+        }
+
+        .warning-button {
+          width: 100%;
+          margin-top: 13px;
+          padding: 11px;
+          background: rgba(255, 60, 60, 0.1);
+          border: 1px solid #ff3c3c;
+          border-radius: 10px;
+          color: #ff3c3c;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .message {
+          padding: 12px;
+          border-radius: 10px;
+          margin-bottom: 14px;
+          background: rgba(0, 196, 140, 0.1);
+          border: 1px solid #00c48c;
+          color: #00c48c;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .error {
+          padding: 12px;
+          border-radius: 10px;
+          margin-bottom: 14px;
+          background: rgba(255, 60, 60, 0.1);
+          border: 1px solid #ff3c3c;
+          color: #ff3c3c;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .buy-button {
+          width: 100%;
+          padding: 15px;
+          border: none;
+          border-radius: 14px;
+          color: white;
+          font-weight: 800;
+          font-size: 14px;
+          cursor: pointer;
+        }
+
+        .wallet-button {
+          width: 100%;
+          margin-top: 10px;
+          padding: 12px;
+          background: transparent;
+          border: 1px solid #333;
+          border-radius: 12px;
+          color: #888;
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        @media (min-width: 700px) {
+          .content {
+            padding-top: 35px;
+          }
+
+          .card {
+            padding: 22px;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .header-inner {
+            padding: 9px 12px;
+          }
+
+          .header-title {
+            font-size: 14px;
+          }
+
+          .language-button {
+            font-size: 10px;
+            padding: 8px;
+          }
+
+          .content {
+            padding: 18px 12px 35px;
+          }
+
+          .card {
+            padding: 15px;
+            border-radius: 15px;
+          }
+
+          .promo-title {
+            font-size: 17px;
+          }
+
+          .wallet-row,
+          .price-row {
+            align-items: flex-start;
+          }
+        }
+      `}</style>
+
       {/* HEADER */}
-
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          background: '#0A0A0A',
-          borderBottom: '1px solid #1E1E1E',
-          padding: '14px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          zIndex: 100,
-        }}
-      >
-        <button
-          onClick={() => router.back()}
-          style={{
-            width: '36px',
-            height: '36px',
-            background: '#1A1A1A',
-            border: '1px solid #2A2A2A',
-            borderRadius: '10px',
-            color: 'white',
-            fontSize: '16px',
-            cursor: 'pointer',
-          }}
-        >
-          ←
-        </button>
-
-        <div
-          style={{
-            fontSize: '16px',
-            fontWeight: '700',
-          }}
-        >
-          Achat direct
-        </div>
-      </div>
-
-      {/* CONTENT */}
-
-      <div
-        style={{
-          padding: '80px 20px 40px',
-          maxWidth: '500px',
-          margin: '0 auto',
-        }}
-      >
-        {/* ARTICLE */}
-
-        <div
-          style={{
-            background: '#1A1A1A',
-            borderRadius: '16px',
-            padding: '16px',
-            border: '1px solid #2A2A2A',
-            marginBottom: '20px',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '11px',
-              color: '#888',
-              marginBottom: '4px',
-            }}
+      <header className="header">
+        <div className="header-inner">
+          <button
+            className="back-button"
+            onClick={() => router.back()}
+            aria-label={
+              language === 'fr'
+                ? 'Retour'
+                : 'Back'
+            }
           >
-            ARTICLE
+            ←
+          </button>
+
+          <div className="header-title">
+            {language === 'fr'
+              ? 'Achat direct'
+              : 'Direct purchase'}
           </div>
 
-          <div
-            style={{
-              fontSize: '15px',
-              fontWeight: '700',
-              marginBottom: '6px',
-            }}
+          <button
+            className="language-button"
+            onClick={() =>
+              setLanguage(
+                language === 'fr' ? 'en' : 'fr'
+              )
+            }
           >
+            {language === 'fr'
+              ? '🇬🇧 EN'
+              : '🇫🇷 FR'}
+          </button>
+        </div>
+      </header>
+
+      <main className="content">
+        {/* ARTICLE */}
+        <section className="card">
+          <div className="article-title">
+            {language === 'fr'
+              ? 'Article'
+              : 'Item'}
+          </div>
+
+          <div className="promo-title">
             {promo.titre}
           </div>
 
-          <div
-            style={{
-              fontSize: '12px',
-              color: '#888',
-            }}
-          >
-            🏪 {promo.profiles?.nom || 'Vendeur'}
+          <div className="seller">
+            🏪 {promo.profiles?.nom || (
+              language === 'fr'
+                ? 'Vendeur'
+                : 'Seller'
+            )}
+
             {' · '}
+
             {promo.profiles?.adresse ||
-              'Adresse non précisée'}
+              (language === 'fr'
+                ? 'Adresse non précisée'
+                : 'Address not specified')}
           </div>
 
           <div
+            className="stock"
             style={{
-              marginTop: '10px',
-              fontSize: '12px',
               color:
                 Number(promo.stock) > 0
                   ? '#00C48C'
                   : '#FF3C3C',
             }}
           >
-            📦 Stock : {Number(promo.stock || 0)}
+            📦{' '}
+            {language === 'fr'
+              ? `Stock : ${Number(promo.stock || 0)}`
+              : `Stock: ${Number(promo.stock || 0)}`}
           </div>
-        </div>
+        </section>
 
         {/* WALLET */}
-
-        <div
-          style={{
-            background: '#1A1A1A',
-            borderRadius: '14px',
-            padding: '14px',
-            border: '1px solid #2A2A2A',
-            marginBottom: '20px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: '8px',
-              fontSize: '13px',
-            }}
-          >
-            <span style={{ color: '#888' }}>
-              Solde disponible
+        <section className="card">
+          <div className="wallet-row">
+            <span className="muted">
+              {language === 'fr'
+                ? 'Solde disponible'
+                : 'Available balance'}
             </span>
 
             <span
+              className="wallet-balance"
               style={{
-                fontWeight: '800',
                 color: soldeSuffisant
                   ? '#00C48C'
                   : '#FF3C3C',
@@ -416,211 +681,134 @@ export default function Acheter() {
             </span>
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '13px',
-            }}
-          >
-            <span style={{ color: '#888' }}>
-              Prix de l’article
+          <div className="wallet-row">
+            <span className="muted">
+              {language === 'fr'
+                ? 'Prix de l’article'
+                : 'Item price'}
             </span>
 
-            <span
-              style={{
-                color: '#FF5C00',
-                fontWeight: '800',
-              }}
-            >
+            <span className="orange">
               {formatMoney(montantTotal)} FCFA
             </span>
           </div>
 
           {!soldeSuffisant && (
             <button
+              className="warning-button"
               onClick={() => router.push('/wallet')}
-              style={{
-                width: '100%',
-                marginTop: '12px',
-                padding: '10px',
-                background: 'rgba(255,60,60,0.1)',
-                border: '1px solid #FF3C3C',
-                borderRadius: '10px',
-                color: '#FF3C3C',
-                fontSize: '12px',
-                fontWeight: '700',
-                cursor: 'pointer',
-              }}
             >
-              💰 Approvisionner mon portefeuille
+              💰{' '}
+              {language === 'fr'
+                ? 'Approvisionner mon portefeuille'
+                : 'Add funds to my wallet'}
             </button>
           )}
-        </div>
+        </section>
 
-        {/* RÉCAPITULATIF */}
+        {/* RECAP */}
+        <section className="card">
+          <div className="recap-title">
+            {language === 'fr'
+              ? 'Récapitulatif'
+              : 'Summary'}
+          </div>
 
-        <div
-          style={{
-            background: '#1A1A1A',
-            borderRadius: '14px',
-            padding: '14px',
-            border: '1px solid #2A2A2A',
-            marginBottom: '20px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: '10px',
-              fontSize: '13px',
-            }}
-          >
-            <span style={{ color: '#888' }}>
-              Prix à payer
+          <div className="price-row">
+            <span className="muted">
+              {language === 'fr'
+                ? 'Prix à payer'
+                : 'Amount to pay'}
             </span>
 
-            <span
-              style={{
-                fontWeight: '800',
-                color: '#FF5C00',
-              }}
-            >
+            <span className="orange">
               {formatMoney(montantTotal)} FCFA
             </span>
           </div>
 
           <div
             style={{
-              fontSize: '12px',
+              marginTop: '15px',
               color: '#888',
-              lineHeight: '1.6',
+              fontSize: '12px',
+              lineHeight: 1.7,
             }}
           >
-            Le montant sera débité de ton portefeuille puis
-            bloqué par Promo’s World. Le vendeur recevra les
-            fonds après confirmation de la réception.
+            {language === 'fr'
+              ? 'Le montant sera débité de ton portefeuille puis bloqué par Promo’s World. Le vendeur recevra les fonds après les validations prévues par le système.'
+              : "The amount will be deducted from your wallet and held securely by Promo's World. The seller will receive the funds after the required validations."}
           </div>
-        </div>
+        </section>
 
-        {/* INFO */}
-
-        <div
-          style={{
-            background: 'rgba(255,92,0,0.08)',
-            borderRadius: '12px',
-            padding: '12px 14px',
-            border:
-              '1px solid rgba(255,92,0,0.2)',
-            fontSize: '12px',
-            color: '#888',
-            marginBottom: '20px',
-            lineHeight: '1.6',
-          }}
-        >
-          🔒 Paiement par portefeuille Promo’s World.
+        {/* SECURITY */}
+        <div className="info">
+          🔒{' '}
+          {language === 'fr'
+            ? 'Paiement sécurisé par le portefeuille Promo’s World.'
+            : "Secure payment through the Promo's World wallet."}
           <br />
-          Les fonds restent bloqués jusqu’à la confirmation
-          de la réception de l’article.
+          {language === 'fr'
+            ? 'Les fonds restent bloqués conformément au processus de transaction.'
+            : 'Funds remain held according to the transaction process.'}
         </div>
-
-        {/* ERREUR */}
 
         {error && (
-          <div
-            style={{
-              padding: '12px',
-              borderRadius: '10px',
-              marginBottom: '16px',
-              background: 'rgba(255,60,60,0.1)',
-              border: '1px solid #FF3C3C',
-              color: '#FF3C3C',
-              fontSize: '13px',
-            }}
-          >
+          <div className="error">
             {error}
           </div>
         )}
 
-        {/* MESSAGE */}
-
         {message && !error && (
-          <div
-            style={{
-              padding: '12px',
-              borderRadius: '10px',
-              marginBottom: '16px',
-              background: 'rgba(0,196,140,0.1)',
-              border: '1px solid #00C48C',
-              color: '#00C48C',
-              fontSize: '13px',
-            }}
-          >
+          <div className="message">
             {message}
           </div>
         )}
 
-        {/* BOUTON */}
-
+        {/* PAYMENT */}
         <button
           onClick={handleAcheter}
-          disabled={
-            processing ||
-            !soldeSuffisant ||
-            promo.statut !== 'actif' ||
-            Number(promo.stock) <= 0
-          }
+          disabled={!canBuy}
+          className="buy-button"
           style={{
-            width: '100%',
-            padding: '15px',
-            background:
-              processing ||
-              !soldeSuffisant ||
-              promo.statut !== 'actif' ||
-              Number(promo.stock) <= 0
-                ? '#333'
-                : '#00C48C',
-            border: 'none',
-            borderRadius: '14px',
-            color: 'white',
-            fontWeight: '700',
-            fontSize: '14px',
-            cursor:
-              processing ||
-              !soldeSuffisant ||
-              promo.statut !== 'actif' ||
-              Number(promo.stock) <= 0
-                ? 'not-allowed'
-                : 'pointer',
+            background: canBuy
+              ? '#00C48C'
+              : '#333',
+            cursor: canBuy
+              ? 'pointer'
+              : 'not-allowed',
           }}
         >
           {processing
-            ? 'Traitement...'
+            ? language === 'fr'
+              ? 'Traitement...'
+              : 'Processing...'
             : !soldeSuffisant
-              ? 'Solde insuffisant'
+              ? language === 'fr'
+                ? 'Solde insuffisant'
+                : 'Insufficient balance'
               : Number(promo.stock) <= 0
-                ? 'Stock épuisé'
-                : `Payer ${formatMoney(montantTotal)} FCFA`}
+                ? language === 'fr'
+                  ? 'Stock épuisé'
+                  : 'Out of stock'
+                : language === 'fr'
+                  ? `Payer ${formatMoney(
+                      montantTotal
+                    )} FCFA`
+                  : `Pay ${formatMoney(
+                      montantTotal
+                    )} FCFA`}
         </button>
 
         <button
           onClick={() => router.push('/wallet')}
-          style={{
-            width: '100%',
-            marginTop: '10px',
-            padding: '12px',
-            background: 'transparent',
-            border: '1px solid #333',
-            borderRadius: '12px',
-            color: '#888',
-            fontSize: '12px',
-            cursor: 'pointer',
-          }}
+          className="wallet-button"
         >
-          💰 Voir mon portefeuille
+          💰{' '}
+          {language === 'fr'
+            ? 'Voir mon portefeuille'
+            : 'View my wallet'}
         </button>
-      </div>
+      </main>
     </div>
   )
 }
