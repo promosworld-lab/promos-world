@@ -1,38 +1,52 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { LanguageProvider } from "@/lib/LanguageContext";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { ToastProvider } from "@/components/providers/ToastProvider";
+import AppShell from "@/components/layout/AppShell";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 
 export const metadata: Metadata = {
-  title: "Promo's World",
-  description: "La marketplace des promotions en Afrique de l'Ouest",
+title: {
+default: "Promo's World",
+template: "%s | Promo's World",
+},
+
+description:
+"Découvrez les meilleures promotions et offres avec Promo's World.",
+
+keywords: [
+"promotions",
+"bons plans",
+"shopping",
+"Promo's World",
+],
+
+applicationName: "Promo's World",
+
+icons: {
+icon: "/favicon.ico",
+},
 };
 
 export default function RootLayout({
-  children,
+children,
 }: Readonly<{
-  children: React.ReactNode;
+children: React.ReactNode;
 }>) {
-  return (
-    <html
-      lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-screen w-full overflow-x-hidden flex flex-col">
-        <LanguageProvider>
-          {children}
-        </LanguageProvider>
-      </body>
-    </html>
-  );
+return (
+<html lang="fr" suppressHydrationWarning>
+<body className="bg-black text-white antialiased">
+<LanguageProvider>
+<AuthProvider>
+<ToastProvider>
+<AppShell>
+{children}
+</AppShell>
+</ToastProvider>
+</AuthProvider>
+</LanguageProvider>
+</body>
+</html>
+);
 }
