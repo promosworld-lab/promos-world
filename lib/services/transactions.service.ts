@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { Transaction } from "@/types/database-v2";
+import type { Transaction } from "@/types/database";
 export const transactionsService={
  async getByClient(clientId:string):Promise<Transaction[]>{const{data,error}=await supabase.from("transactions").select("*, promotion:promotions(titre,photo_url)").eq("client_id",clientId).order("created_at",{ascending:false});if(error)throw error;return(data??[])as Transaction[]},
  async getByVendeur(vendeurId:string):Promise<Transaction[]>{const{data,error}=await supabase.from("transactions").select("*, promotion:promotions(titre,photo_url), client:profiles!transactions_client_id_fkey(nom,telephone)").eq("vendeur_id",vendeurId).order("created_at",{ascending:false});if(error)throw error;return(data??[])as Transaction[]},
