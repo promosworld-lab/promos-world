@@ -1,94 +1,122 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/client";
+import type { Reservation, ReservationStatus } from "@/types/database";
 
 export const reservationsService = {
-  async getByClient(clientId: string) {
+  async getByClient(clientId: string): Promise<Reservation[]> {
     const { data, error } = await supabase
       .from("reservations")
-      .select(`
-        *,
-        promotion:promotions (*)
-      `)
+      .select("*, promotion:promotions(*)")
       .eq("client_id", clientId)
-      .order("created_at", {
-        ascending: false,
-      });
-
+      .order("created_at", { ascending: false });
     if (error) throw error;
-
-    return data;
+    return (data ?? []) as Reservation[];
   },
 
-  async getByVendeur(vendeurId: string) {
+  async getByVendeur(vendeurId: string): Promise<Reservation[]> {
     const { data, error } = await supabase
       .from("reservations")
-      .select(`
-        *,
-        promotion:promotions!inner (*)
-      `)
+      .select("*, promotion:promotions!inner(*)")
       .eq("promotions.vendeur_id", vendeurId)
-      .order("created_at", {
-        ascending: false,
-      });
-
+      .order("created_at", { ascending: false });
     if (error) throw error;
-
-    return data;
+    return (data ?? []) as Reservation[];
   },
 
-  async getById(id: string) {
+  async getById(id: string): Promise<Reservation> {
     const { data, error } = await supabase
       .from("reservations")
-      .select(`
-        *,
-        promotion:promotions (
-          *,
-          vendeur:profiles!promotions_vendeur_id_fkey (*)
-        ),
-        client:profiles!reservations_client_id_fkey (*)
-      `)
+      .select("*, promotion:promotions(*), client:profiles!reservations_client_id_fkey(*)")
       .eq("id", id)
       .single();
-
     if (error) throw error;
+    return data as Reservation;
+  },
 
+  async createFromWallet(promotionId: string): Promise<Reservation> {
+    const { data, error } = await supabase.rpc("create_reservation_from_wallet", {
+      p_promotion_id: promotionId,
+    });
+    if (error) throw error;
+    const result = data as { reservation_id?: string } | null;
+    if (!result?.reservation_id) throw new Error("La réservation n'a pas été créée.");
+    return this.getById(result.reservation_id);
+  },
+
+  async accept(id: string) {
+    const { data, error } = await supabase.rpc("accept_reservation", {
+      p_reservation_id: id,
+    });
+    if (error) throw error;
     return data;
   },
 
-  async create(payload: Record<string, any>) {
-    const { data, error } = await supabase
-      .from("reservations")
-      .insert(payload)
-      .select()
-      .single();
-
+  async reject(id: string) {
+    const { data, error } = await supabase.rpc("reject_reservation", {
+      p_reservation_id: id,
+    });
     if (error) throw error;
-
     return data;
   },
 
-  async updateStatus(id: string, statut: string) {
-    const { data, error } = await supabase
-      .from("reservations")
-      .update({ statut })
-      .eq("id", id)
-      .select()
-      .single();
-
+  async payBalance(id: string) {
+    const { data, error } = await supabase.rpc("pay_reservation_balance", {
+      p_reservation_id: id,
+    });
     if (error) throw error;
-
     return data;
   },
 
-  async update(id: string, payload: Record<string, any>) {
-    const { data, error } = await supabase
-      .from("reservations")
-      .update(payload)
-      .eq("id", id)
-      .select()
-      .single();
-
+  async markShipped(id: string) {
+    const { data, error } = await supabase.rpc("confirm_reservation_shipped", {
+      p_reservation_id: id,
+    });
     if (error) throw error;
-
     return data;
+  },
+
+  async confirmDelivery(id: string) {
+    const { data, error } = await supabase.rpc("confirm_reservation_delivery", {
+      p_reservation_id: id,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async confirmReception(id: string) {
+    const { data, error } = await supabase.rpc("confirm_reservation_reception", {
+      p_reservation_id: id,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async confirmConformity(id: string) {
+    const { data, error } = await supabase.rpc("confirm_reservation_conformity", {
+      p_reservation_id: id,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async openDispute(id: string, reason: string) {
+    const { data, error } = await supabase.rpc("open_reservation_dispute", {
+      p_reservation_id: id,
+      p_motif: reason,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async getForCurrentUser(): Promise<Reservation[]> {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+    if (!user) throw new Error("Utilisateur non authentifié.");
+    return this.getByClient(user.id);
+  },
+
+  // Direct status updates are intentionally forbidden: workflow transitions belong to PostgreSQL RPCs.
+  assertStatus(status: string): asserts status is ReservationStatus {
+    const allowed: ReservationStatus[] = ["acompte_paye", "reservation_acceptee", "solde_paye", "expediee", "livree", "inspection", "terminee", "annulee", "expiree", "litige"];
+    if (!allowed.includes(status as ReservationStatus)) throw new Error(`Statut de réservation invalide: ${status}`);
   },
 };
