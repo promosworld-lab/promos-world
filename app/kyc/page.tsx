@@ -1,37 +1,39 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { CheckCircle2, FileText, ShieldCheck, Store, UserRound } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase/client";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import {FormEvent,useEffect,useRef,useState} from "react";
+import {useRouter} from "next/navigation";
+import {Camera,CheckCircle2,ChevronLeft,ChevronRight,FileText,ShieldCheck,Store,UserRound,Video} from "lucide-react";
+import {useAuth} from "@/hooks/useAuth";
+import {supabase} from "@/lib/supabase/client";
+import {LoadingSpinner} from "@/components/ui/LoadingSpinner";
 
 export default function KycPage(){
  const router=useRouter(); const {user,profile,loading:authLoading,refreshProfile}=useAuth();
- const [saving,setSaving]=useState(false); const [message,setMessage]=useState(""); const [form,setForm]=useState({full_name:"",nationality:"",document_type:"Carte nationale d'identité",document_number:"",document_url:"",selfie_url:"",video_url:"",business_name:"",business_type:"",business_address:"",company_name:"",company_registration:""});
- useEffect(()=>{if(profile) setForm(f=>({...f,full_name:profile.nom||"",business_address:profile.adresse||""}));},[profile]);
- if(authLoading) return <main className="min-h-screen bg-black flex items-center justify-center"><LoadingSpinner/></main>;
- if(!user){router.replace("/auth"); return null;}
- const seller=profile?.role==="vendeur";
- async function submit(e:FormEvent){e.preventDefault();setSaving(true);setMessage("");try{
-  const payload={user_id:user.id,role:profile?.role||"client",full_name:form.full_name,nationality:form.nationality,document_type:form.document_type,document_number:form.document_number,document_url:form.document_url||null,selfie_url:form.selfie_url||null,video_url:seller?form.video_url||null:null,business_name:seller?form.business_name||null:null,business_type:seller?form.business_type||null:null,business_address:seller?form.business_address||null:null,company_name:seller?form.company_name||null:null,company_registration:seller?form.company_registration||null:null,status:"en_attente",submitted_at:new Date().toISOString()};
-  const {error}=await supabase.from("kyc_submissions").upsert(payload,{onConflict:"user_id"}); if(error) throw error;
-  const {error:pe}=await supabase.from("profiles").update({kyc_status:"en_attente"}).eq("id",user.id); if(pe) throw pe;
-  await refreshProfile(); setMessage("Votre demande KYC a été soumise avec succès. Un administrateur va la vérifier.");
+ const seller=profile?.role==="vendeur"; const [step,setStep]=useState(1); const [saving,setSaving]=useState(false); const [message,setMessage]=useState("");
+ const [form,setForm]=useState<any>({full_name:"",nationality:"",document_type:"Carte nationale d'identité",document_number:"",business_name:"",business_type:"",business_address:""});
+ const [documentFile,setDocumentFile]=useState<File|null>(null); const [selfieFile,setSelfieFile]=useState<File|null>(null); const [videoFile,setVideoFile]=useState<File|null>(null);
+ useEffect(()=>{if(profile)setForm((f:any)=>({...f,full_name:profile.nom||"",business_address:profile.adresse||""}))},[profile]);
+ if(authLoading)return <main className="min-h-screen bg-black flex items-center justify-center"><LoadingSpinner/></main>;
+ if(!user){router.replace("/auth");return null;}
+ const total=seller?4:3;
+ async function upload(file:File|null,kind:string){if(!file)return null;const ext=file.name.split(".").pop()||"bin";const path=`${user.id}/${kind}-${Date.now()}.${ext}`;const {error}=await supabase.storage.from("kyc-documents").upload(path,file,{upsert:false});if(error)throw error;const {data}=supabase.storage.from("kyc-documents").getPublicUrl(path);return data.publicUrl;}
+ async function submit(e:FormEvent){e.preventDefault();if(step<total){setStep(step+1);return;}if(!documentFile||!selfieFile){setMessage("Veuillez fournir votre document et la vérification du visage.");return;}setSaving(true);setMessage("");try{
+   const document_url=await upload(documentFile,"document"); const selfie_url=await upload(selfieFile,"selfie"); const video_url=seller?await upload(videoFile,"video"):null;
+   const payload={user_id:user.id,role:profile?.role||"client",full_name:form.full_name,nationality:form.nationality,document_type:form.document_type,document_number:form.document_number,document_url,selfie_url,video_url,business_name:seller?form.business_name||null:null,business_type:seller?form.business_type||null:null,business_address:seller?form.business_address||null:null,status:"en_attente",submitted_at:new Date().toISOString()};
+   const {error}=await supabase.from("kyc_submissions").upsert(payload,{onConflict:"user_id"});if(error)throw error;
+   const {error:pe}=await supabase.from("profiles").update({kyc_status:"en_attente"}).eq("id",user.id);if(pe)throw pe;await refreshProfile();setMessage("Votre dossier KYC a été soumis. Il sera vérifié par l'équipe.");
  }catch(err:any){setMessage(err.message||"Impossible d'envoyer votre demande.");}finally{setSaving(false)}}
- return <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6"><div className="mx-auto max-w-3xl">
-  <p className="font-bold text-orange-500">SÉCURITÉ DU COMPTE</p><h1 className="mt-2 text-3xl font-black">Vérification d'identité</h1>
-  <p className="mt-2 text-zinc-400">{seller?"La vérification est obligatoire avant de publier et vendre sur Promo's World.":"Vérifiez votre identité pour débloquer les interactions sécurisées."}</p>
-  <div className="mt-5 rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4 text-sm">{profile?.kyc_status==="verifie"?<span className="flex gap-2 text-green-400"><CheckCircle2/>Compte vérifié</span>:<>Statut actuel : <b>{profile?.kyc_status||"non_soumis"}</b></>}</div>
-  <form onSubmit={submit} className="mt-6 space-y-6 rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-8">
-   <Section icon={<UserRound/>} title="Identité"><Grid><Input label="Nom complet" value={form.full_name} onChange={v=>setForm({...form,full_name:v})} required/><Input label="Nationalité" value={form.nationality} onChange={v=>setForm({...form,nationality:v})} required/><Input label="Type de document" value={form.document_type} onChange={v=>setForm({...form,document_type:v})} required/><Input label="Numéro du document" value={form.document_number} onChange={v=>setForm({...form,document_number:v})} required/></Grid></Section>
-   <Section icon={<FileText/>} title="Documents et vérification"><Grid><Input label="Lien/photo du document (phase test)" value={form.document_url} onChange={v=>setForm({...form,document_url:v})}/><Input label="Lien/photo selfie (phase test)" value={form.selfie_url} onChange={v=>setForm({...form,selfie_url:v})}/>{seller&&<Input label="Lien vidéo visage (phase test)" value={form.video_url} onChange={v=>setForm({...form,video_url:v})}/>}</Grid></Section>
-   {seller&&<Section icon={<Store/>} title="Informations vendeur / entreprise"><Grid><Input label="Nom de la boutique" value={form.business_name} onChange={v=>setForm({...form,business_name:v})} required/><Input label="Type d'activité" value={form.business_type} onChange={v=>setForm({...form,business_type:v})} required/><Input label="Adresse commerciale" value={form.business_address} onChange={v=>setForm({...form,business_address:v})}/><Input label="Entreprise (optionnel)" value={form.company_name} onChange={v=>setForm({...form,company_name:v})}/><Input label="N° d'enregistrement (optionnel)" value={form.company_registration} onChange={v=>setForm({...form,company_registration:v})}/></Grid></Section>}
-   {message&&<div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-4 text-sm">{message}</div>}
-   <button disabled={saving||profile?.kyc_status==="verifie"} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-4 font-black text-black disabled:opacity-50"><ShieldCheck size={20}/>{saving?"Envoi...":profile?.kyc_status==="verifie"?"Compte déjà vérifié":"Soumettre ma vérification"}</button>
-  </form></div></main>
+ return <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6"><div className="mx-auto max-w-3xl"><p className="font-bold text-orange-500">SÉCURITÉ DU COMPTE</p><h1 className="mt-2 text-3xl font-black">Vérification d'identité</h1><p className="mt-2 text-zinc-400">Une procédure étape par étape pour sécuriser votre compte.</p>
+ <div className="mt-6 flex gap-2">{Array.from({length:total}).map((_,i)=><div key={i} className={"h-2 flex-1 rounded-full "+(i+1<=step?"bg-orange-500":"bg-white/10")}/>)}</div><p className="mt-2 text-sm text-zinc-500">Étape {step} sur {total}</p>
+ <form onSubmit={submit} className="mt-6 rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-8">
+ {step===1&&<section><Title icon={<UserRound/>} title="1. Votre identité"/><div className="grid gap-4 sm:grid-cols-2"><Input label="Nom complet" value={form.full_name} onChange={(v:string)=>setForm({...form,full_name:v})} required/><Input label="Nationalité" value={form.nationality} onChange={(v:string)=>setForm({...form,nationality:v})} required/><Input label="Type de document" value={form.document_type} onChange={(v:string)=>setForm({...form,document_type:v})} required/><Input label="Numéro du document" value={form.document_number} onChange={(v:string)=>setForm({...form,document_number:v})} required/></div></section>}
+ {step===2&&<section><Title icon={<FileText/>} title="2. Document officiel"/><p className="mb-5 text-sm text-zinc-400">Prenez une photo nette ou sélectionnez une image de votre document.</p><FileCapture accept="image/*" capture="environment" icon={<Camera/>} label="Prendre ou importer le document" onChange={setDocumentFile} file={documentFile}/></section>}
+ {step===3&&<section><Title icon={<Camera/>} title="3. Vérification du visage"/><p className="mb-5 text-sm text-zinc-400">Utilisez la caméra pour prendre un selfie en direct. Pour une production de niveau Binance, une intégration biométrique/liveness dédiée sera ensuite branchée côté serveur.</p><FileCapture accept="image/*" capture="user" icon={<Camera/>} label="Prendre un selfie avec la caméra" onChange={setSelfieFile} file={selfieFile}/>{seller&&<FileCapture accept="video/*" capture="user" icon={<Video/>} label="Courte vidéo de vérification (vendeur)" onChange={setVideoFile} file={videoFile}/>}</section>}
+ {seller&&step===4&&<section><Title icon={<Store/>} title="4. Votre activité"/><div className="grid gap-4 sm:grid-cols-2"><Input label="Nom de la boutique" value={form.business_name} onChange={(v:string)=>setForm({...form,business_name:v})} required/><Input label="Type d'activité" value={form.business_type} onChange={(v:string)=>setForm({...form,business_type:v})} required/><Input label="Adresse commerciale" value={form.business_address} onChange={(v:string)=>setForm({...form,business_address:v})}/></div></section>}
+ {message&&<div className="mt-6 rounded-xl border border-orange-500/20 bg-orange-500/10 p-4 text-sm">{message}</div>}
+ <div className="mt-7 flex justify-between gap-3">{step>1?<button type="button" onClick={()=>setStep(step-1)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-5 py-3 font-bold"><ChevronLeft size={18}/>Retour</button>:<span/>}<button disabled={saving||profile?.kyc_status==="verifie"} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 font-black text-black disabled:opacity-50">{saving?"Envoi...":step===total?<><ShieldCheck size={18}/>Soumettre le dossier</>:<>Continuer<ChevronRight size={18}/></>}</button></div>
+ </form></div></main>
 }
-function Section({icon,title,children}:{icon:any,title:string,children:any}){return <section><h2 className="mb-4 flex items-center gap-2 text-lg font-bold">{icon}{title}</h2>{children}</section>}
-function Grid({children}:{children:any}){return <div className="grid gap-4 sm:grid-cols-2">{children}</div>}
-function Input({label,value,onChange,required=false}:{label:string,value:string,onChange:(v:string)=>void,required?:boolean}){return <label className="block"><span className="mb-2 block text-sm text-zinc-400">{label}</span><input value={value} onChange={e=>onChange(e.target.value)} required={required} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 outline-none focus:border-orange-500"/></label>}
+function Title({icon,title}:{icon:any,title:string}){return <h2 className="mb-5 flex items-center gap-2 text-xl font-bold">{icon}{title}</h2>}
+function Input({label,value,onChange,required=false}:{label:string,value:string,onChange:(v:string)=>void,required?:boolean}){return <label><span className="mb-2 block text-sm text-zinc-400">{label}</span><input value={value} onChange={e=>onChange(e.target.value)} required={required} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 outline-none focus:border-orange-500"/></label>}
+function FileCapture({accept,capture,icon,label,onChange,file}:{accept:string,capture:any,icon:any,label:string,onChange:(f:File|null)=>void,file:File|null}){return <label className="mb-4 flex cursor-pointer items-center gap-4 rounded-2xl border border-dashed border-white/20 bg-black p-5 hover:border-orange-500"><span className="rounded-xl bg-orange-500/10 p-3 text-orange-500">{icon}</span><span><b className="block">{label}</b><small className="text-zinc-500">{file?file.name:"Aucun fichier sélectionné"}</small></span><input className="hidden" type="file" accept={accept} capture={capture} onChange={e=>onChange(e.target.files?.[0]||null)}/></label>}
