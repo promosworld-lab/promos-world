@@ -81,6 +81,13 @@ export function AuthProvider({children}:{children:ReactNode}) {
       role,pays,ville,kyc_status:"non_soumis"
     },{onConflict:"id"});
     if(profileError) throw new Error(profileError.message);
+
+    // If email confirmation is disabled, Supabase returns a session immediately.
+    // Load the profile so the UI never remains in an indeterminate state.
+    if (data.session) {
+      setUser(data.user);
+      await loadProfile(data.user.id);
+    }
   };
 
   const signOut=async()=>{
