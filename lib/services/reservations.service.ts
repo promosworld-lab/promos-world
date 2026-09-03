@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { Reservation, ReservationStatus } from "@/types/database-v2";
+import type { Reservation, ReservationStatus } from "@/types/database";
 export const reservationsService={
  async getByClient(clientId:string):Promise<Reservation[]>{const{data,error}=await supabase.from("reservations").select("*, promotion:promotions(*)").eq("client_id",clientId).order("created_at",{ascending:false});if(error)throw error;return(data??[])as Reservation[]},
  async getByVendeur(vendeurId:string):Promise<Reservation[]>{const{data,error}=await supabase.from("reservations").select("*, promotion:promotions!inner(*)").eq("promotions.vendeur_id",vendeurId).order("created_at",{ascending:false});if(error)throw error;return(data??[])as Reservation[]},
