@@ -1,243 +1,97 @@
 "use client";
 
-import {
-  createContext,
-  ReactNode,
-  useEffect,
-  useState,
-} from "react";
-
+import { createContext, ReactNode, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import type { Profile } from "@/types";
 
 interface SignUpData {
-  nom: string;
-  email: string;
-  password: string;
-  telephone?: string;
-  adresse?: string;
-  role?: "client" | "vendeur";
+  nom: string; email: string; password: string;
+  telephone?: string; adresse?: string;
+  role: "client" | "vendeur"; pays: string; ville: string;
 }
-
 interface AuthContextType {
-  user: any;
-  profile: Profile | null;
-  loading: boolean;
-
-  isAuthenticated: boolean;
-  isAdmin: boolean;
-  isVendeur: boolean;
-  isClient: boolean;
-
-  signIn: (
-    email: string,
-    password: string
-  ) => Promise<void>;
-
-  signUp: (
-    data: SignUpData
-  ) => Promise<void>;
-
-  signOut: () => Promise<void>;
-
-  refreshProfile: () => Promise<void>;
+  user: any; profile: Profile | null; loading: boolean;
+  isAuthenticated: boolean; isAdmin: boolean; isVendeur: boolean; isClient: boolean;
+  signIn: (email:string,password:string)=>Promise<void>;
+  signUp: (data:SignUpData)=>Promise<void>;
+  signOut: ()=>Promise<void>; refreshProfile: ()=>Promise<void>;
 }
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthContext =
-  createContext<AuthContextType | undefined>(
-    undefined
-  );
+export function AuthProvider({children}:{children:ReactNode}) {
+  const [user,setUser]=useState<any>(null);
+  const [profile,setProfile]=useState<Profile|null>(null);
+  const [loading,setLoading]=useState(true);
 
-export function AuthProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] =
-    useState<Profile | null>(null);
+  const loadProfile=useCallback(async(userId:string)=>{
+    const {data,error}=await supabase.from("profiles").select("*").eq("id",userId).maybeSingle();
+    if(error) throw new Error(error.message);
+    setProfile((data as Profile|null) ?? null);
+  },[]);
 
-  const [loading, setLoading] = useState(true);
+  const refreshProfile=useCallback(async()=>{ if(user?.id) await loadProfile(user.id); },[user?.id,loadProfile]);
 
-  const loadProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-
-    if (error) {
-      console.error(
-        "Erreur récupération profil:",
-        error
-      );
-
-      setProfile(null);
-      return;
-    }
-
-    setProfile(data as Profile);
-  };
-
-  const refreshProfile = async () => {
-    if (!user?.id) return;
-
-    await loadProfile(user.id);
-  };
-
-  useEffect(() => {
-    const initializeAuth = async () => {
+  useEffect(()=>{
+    let mounted=true;
+    const initialize=async()=>{
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        const currentUser = session?.user ?? null;
-
-        setUser(currentUser);
-
-        if (currentUser) {
-          await loadProfile(currentUser.id);
-        }
-      } catch (error) {
-        console.error(
-          "Erreur initialisation auth:",
-          error
-        );
-      } finally {
-        setLoading(false);
-      }
+        const {data:{session},error}=await supabase.auth.getSession();
+        if(error) throw error;
+        if(!mounted) return;
+        const current=session?.user ?? null;
+        setUser(current);
+        if(current) await loadProfile(current.id);
+      } catch(error) {
+        console.error("Auth initialization error:",error);
+        if(mounted) { setUser(null); setProfile(null); }
+      } finally { if(mounted) setLoading(false); }
     };
+    initialize();
 
-    initializeAuth();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const currentUser =
-          session?.user ?? null;
-
-        setUser(currentUser);
-
-        if (currentUser) {
-          await loadProfile(currentUser.id);
-        } else {
-          setProfile(null);
-        }
-
-        setLoading(false);
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{
+      const current=session?.user ?? null;
+      setUser(current);
+      if(!current) setProfile(null);
+      if(current && event !== "INITIAL_SESSION") {
+        setTimeout(()=>loadProfile(current.id).catch(console.error),0);
       }
-    );
+      setLoading(false);
+    });
+    return ()=>{mounted=false;subscription.unsubscribe();};
+  },[loadProfile]);
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const signIn = async (
-    email: string,
-    password: string
-  ) => {
-    const { error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-    if (error) throw error;
+  const signIn=async(email:string,password:string)=>{
+    const {data,error}=await supabase.auth.signInWithPassword({email,password});
+    if(error) throw new Error(error.message);
+    setUser(data.user);
+    if(data.user) await loadProfile(data.user.id);
   };
 
-  const signUp = async ({
-    nom,
-    email,
-    password,
-    telephone,
-    adresse,
-    role = "client",
-  }: SignUpData) => {
-    const { data, error } =
-      await supabase.auth.signUp({
-        email,
-        password,
-      });
+  const signUp=async(payload:SignUpData)=>{
+    const {nom,email,password,telephone,adresse,role,pays,ville}=payload;
+    const {data,error}=await supabase.auth.signUp({
+      email,password,
+      options:{data:{nom,role,pays,ville}}
+    });
+    if(error) throw new Error(error.message);
+    if(!data.user) throw new Error("Impossible de créer le compte.");
 
-    if (error) throw error;
-
-    if (!data.user) {
-      throw new Error(
-        "Impossible de créer le compte."
-      );
-    }
-
-    /*
-      Création du profil.
-
-      Plus tard, on pourra automatiser ça
-      complètement avec un trigger Supabase.
-    */
-
-    const { error: profileError } =
-      await supabase
-        .from("profiles")
-        .upsert({
-          id: data.user.id,
-          nom,
-          email,
-          telephone: telephone || "",
-          adresse: adresse || "",
-          role,
-        });
-
-    if (profileError) {
-      console.error(
-        "Erreur création profil:",
-        profileError
-      );
-    }
+    const {error:profileError}=await supabase.from("profiles").upsert({
+      id:data.user.id, nom, email, telephone:telephone||"", adresse:adresse||"",
+      role,pays,ville,kyc_status:"non_soumis"
+    },{onConflict:"id"});
+    if(profileError) throw new Error(profileError.message);
   };
 
-  const signOut = async () => {
-    const { error } =
-      await supabase.auth.signOut();
-
-    if (error) throw error;
-
-    setUser(null);
-    setProfile(null);
+  const signOut=async()=>{
+    const {error}=await supabase.auth.signOut();
+    if(error) throw new Error(error.message);
+    setUser(null);setProfile(null);
   };
 
-  const isAuthenticated = !!user;
-
-  const isAdmin =
-    profile?.role === "admin";
-
-  const isVendeur =
-    profile?.role === "vendeur";
-
-  const isClient =
-    profile?.role === "client";
-
-  return (
-    <AuthContext.Provider
-  value={{
-    user,
-    profile,
-    loading,
-
-    isAuthenticated,
-    isAdmin,
-    isVendeur,
-    isClient,
-
-    signIn,
-    signUp,
-    signOut,
-
-    refreshProfile,
-  }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{
+    user,profile,loading,isAuthenticated:!!user,
+    isAdmin:profile?.role==="admin",isVendeur:profile?.role==="vendeur",isClient:profile?.role==="client",
+    signIn,signUp,signOut,refreshProfile
+  }}>{children}</AuthContext.Provider>;
 }
