@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/hooks/useAuth";
+import { useLanguage } from "@/hooks/useLanguage";
 import { supabase } from "@/lib/supabase";
 
 interface Conversation {
@@ -18,14 +19,17 @@ interface Conversation {
 }
 
 export default function MessagesPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { language } = useLanguage();
+  const text = language === "en" ? { title:"Messages", subtitle:"Find all your conversations.", search:"Search conversations...", empty:"No conversations", emptyText:"Your conversations with sellers and buyers will appear here.", user:"User" } : { title:"Messages", subtitle:"Retrouvez toutes vos conversations.", search:"Rechercher une conversation...", empty:"Aucune conversation", emptyText:"Vos conversations avec les vendeurs et clients apparaîtront ici.", user:"Utilisateur" };
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!user) { setConversations([]); setLoading(false); return; }
 
     const loadConversations = async () => {
       try {
@@ -57,7 +61,7 @@ export default function MessagesPage() {
           if (!conversationMap.has(otherUserId)) {
             conversationMap.set(otherUserId, {
               userId: otherUserId,
-              nom: "Utilisateur",
+              nom: text.user,
               dernierMessage: message.contenu,
               createdAt: message.created_at,
               nonLus:
@@ -88,7 +92,7 @@ export default function MessagesPage() {
 
             if (conversation) {
               conversation.nom =
-                profile.nom || "Utilisateur";
+                profile.nom || text.user;
             }
           });
         }
@@ -108,7 +112,7 @@ export default function MessagesPage() {
     };
 
     loadConversations();
-  }, [user]);
+  }, [user, authLoading]);
 
   const filteredConversations = useMemo(() => {
     const query = search.toLowerCase();
@@ -137,11 +141,11 @@ export default function MessagesPage() {
           </p>
 
           <h1 className="mt-2 text-3xl font-bold">
-            Messages
+            {text.title}
           </h1>
 
           <p className="mt-2 text-zinc-500">
-            Retrouvez toutes vos conversations.
+            {text.subtitle}
           </p>
         </div>
 
@@ -154,7 +158,7 @@ export default function MessagesPage() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Rechercher une conversation..."
+            placeholder={text.search}
             className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-4 pl-12 pr-4 outline-none transition focus:border-orange-500"
           />
         </div>
@@ -162,8 +166,8 @@ export default function MessagesPage() {
         {filteredConversations.length === 0 ? (
           <EmptyState
             icon={<MessageCircle size={48} />}
-            title="Aucune conversation"
-            description="Vos conversations avec les vendeurs et clients apparaîtront ici."
+            title={text.empty}
+            description={text.emptyText}
           />
         ) : (
           <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
@@ -186,7 +190,7 @@ export default function MessagesPage() {
                     <span className="shrink-0 text-xs text-zinc-600">
                       {new Date(
                         conversation.createdAt
-                      ).toLocaleDateString("fr-FR")}
+                      ).toLocaleDateString(language === "en" ? "en-US" : "fr-FR")}
                     </span>
                   </div>
 
