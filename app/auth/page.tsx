@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/hooks/useLanguage';
 
 const countries = ['Bénin', 'Nigeria', 'Togo', 'Ghana', 'Côte d’Ivoire', 'Autre'];
-const copy = { fr: { back:"{t.back}", badge:"PROMO’S WORLD", hero:"Découvrez.\nAchetez.\nVendez.", intro:"Une marketplace moderne pour publier des articles, créer des promotions et acheter avec plus de confiance.", login:"Connexion", register:"Inscription", welcome:"{t.welcome}", create:"{t.create}", email:"Email", password:"Mot de passe", name:"{t.name}", country:"{t.country}", city:"{t.city}", client:"{t.client}", seller:"{t.seller}", wait:"{t.wait}", connect:"{t.connect}", createAccount:"{t.createAccount}", location:"{t.location}" }, en: { back:"Back to home", badge:"PROMO’S WORLD", hero:"Discover.\nBuy.\nSell.", intro:"A modern marketplace to publish products, create offers and buy with more confidence.", login:"Sign in", register:"Sign up", welcome:"Welcome 👋", create:"Create an account", email:"Email", password:"Password", name:"Full name", country:"Country", city:"City", client:"Buyer", seller:"Seller", wait:"Please wait...", connect:"Sign in", createAccount:"Create my account", location:"Choose your profile and location." } };
+const copy = { fr: { back:"Retour à l’accueil", badge:"PROMO’S WORLD", hero:"Découvrez.\nAchetez.\nVendez.", intro:"Une marketplace moderne pour publier des articles, créer des promotions et acheter avec plus de confiance.", login:"Connexion", register:"Inscription", welcome:"Bienvenue 👋", create:"Créer un compte", email:"Email", password:"Mot de passe", name:"Nom complet", country:"Pays", city:"Ville", client:"Acheteur", seller:"Vendeur", wait:"Veuillez patienter...", connect:"Se connecter", createAccount:"Créer mon compte", location:"Choisissez votre profil et votre localisation." }, en: { back:"Back to home", badge:"PROMO’S WORLD", hero:"Discover.\nBuy.\nSell.", intro:"A modern marketplace to publish products, create offers and buy with more confidence.", login:"Sign in", register:"Sign up", welcome:"Welcome 👋", create:"Create an account", email:"Email", password:"Password", name:"Full name", country:"Country", city:"City", client:"Buyer", seller:"Seller", wait:"Please wait...", connect:"Sign in", createAccount:"Create my account", location:"Choose your profile and location." } };
 
 export default function AuthPage() {
   const router = useRouter();
@@ -21,8 +21,8 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'client' | 'vendeur'>('client');
-  const [pays, set{t.country}] = useState('Bénin');
-  const [ville, set{t.city}] = useState('');
+  const [pays, setPays] = useState('Bénin');
+  const [ville, setVille] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -72,8 +72,8 @@ export default function AuthPage() {
       <section className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full max-w-md">
           <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-400 lg:hidden"><ArrowLeft size={18}/> Accueil</Link>
-          <h2 className="text-3xl font-black">{mode === 'login' ? '{t.welcome}' : '{t.create}'}</h2>
-          <p className="mt-2 text-sm text-zinc-500">{mode === 'login' ? 'Connectez-vous pour continuer.' : '{t.location}'}</p>
+          <h2 className="text-3xl font-black">{mode === 'login' ? t.welcome : t.create}</h2>
+          <p className="mt-2 text-sm text-zinc-500">{mode === 'login' ? 'Connectez-vous pour continuer.' : t.location}</p>
 
           <div className="mt-8 grid grid-cols-2 rounded-xl border border-white/10 bg-zinc-950 p-1">
             {(['login','register'] as const).map((item) => <button key={item} type="button" onClick={() => { setMode(item); setMessage(''); }} className={`rounded-lg py-2.5 text-sm font-bold transition ${mode === item ? 'bg-orange-500 text-black' : 'text-zinc-400'}`}>{item === 'login' ? t.login : t.register}</button>)}
@@ -81,19 +81,19 @@ export default function AuthPage() {
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {mode === 'register' && <>
-              <Field label="{t.name}" icon={<User size={19}/>}><input value={nom} onChange={(e)=>setNom(e.target.value)} required placeholder="Votre nom" className="auth-input"/></Field>
+              <Field label={t.name} icon={<User size={19}/>}><input value={nom} onChange={(e)=>setNom(e.target.value)} required placeholder="Votre nom" className="auth-input"/></Field>
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-zinc-300">Je souhaite utiliser Promo’s World comme</label>
                 <div className="grid grid-cols-2 gap-3">
-                  <RoleButton active={role==='client'} onClick={()=>setRole('client')} icon={<Users size={20}/>} title="{t.client}" text="Acheter et réserver"/>
-                  <RoleButton active={role==='vendeur'} onClick={()=>setRole('vendeur')} icon={<Store size={20}/>} title="{t.seller}" text="Publier et vendre"/>
+                  <RoleButton active={role==='client'} onClick={()=>setRole('client')} icon={<Users size={20}/>} title={t.client} text="Acheter et réserver"/>
+                  <RoleButton active={role==='vendeur'} onClick={()=>setRole('vendeur')} icon={<Store size={20}/>} title={t.seller} text="Publier et vendre"/>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="{t.country}" icon={<MapPin size={19}/>}><select value={pays} onChange={(e)=>set{t.country}(e.target.value)} className="auth-input"><option>{countries[0]}</option>{countries.slice(1).map(c=><option key={c}>{c}</option>)}</select></Field>
-                <Field label="{t.city}" icon={<MapPin size={19}/>}><input value={ville} onChange={(e)=>set{t.city}(e.target.value)} required placeholder="Votre ville" className="auth-input"/></Field>
+                <Field label={t.country} icon={<MapPin size={19}/>}><select value={pays} onChange={(e)=>setPays(e.target.value)} className="auth-input"><option>{countries[0]}</option>{countries.slice(1).map(c=><option key={c}>{c}</option>)}</select></Field>
+                <Field label={t.city} icon={<MapPin size={19}/>}><input value={ville} onChange={(e)=>setVille(e.target.value)} required placeholder="Votre ville" className="auth-input"/></Field>
               </div>
             </>}
 
@@ -101,7 +101,7 @@ export default function AuthPage() {
             <Field label="Mot de passe" icon={<Lock size={19}/>} right={<button type="button" onClick={()=>setShowPassword(!showPassword)} className="text-zinc-500 hover:text-white">{showPassword?<EyeOff size={19}/>:<Eye size={19}/>}</button>}><input type={showPassword?'text':'password'} value={password} onChange={(e)=>setPassword(e.target.value)} required minLength={6} placeholder="Minimum 6 caractères" className="auth-input"/></Field>
 
             {message && <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-4 text-sm text-orange-200">{message}</div>}
-            <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-4 font-black text-black transition hover:bg-orange-400 disabled:opacity-60">{loading && <Loader2 className="animate-spin" size={19}/>} {loading ? '{t.wait}' : mode==='login' ? '{t.connect}' : '{t.createAccount}'}</button>
+            <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-4 font-black text-black transition hover:bg-orange-400 disabled:opacity-60">{loading && <Loader2 className="animate-spin" size={19}/>} {loading ? t.wait : mode==='login' ? t.connect : t.createAccount}</button>
           </form>
         </div>
       </section>

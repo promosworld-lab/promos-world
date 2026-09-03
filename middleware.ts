@@ -1,67 +1,82 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
 
 const protectedRoutes = [
-  '/dashboard',
-  '/wallet',
-  '/transactions',
-  '/messages',
-  '/profil',
-  '/reservations',
-  '/avis',
-  '/litiges',
-  '/acheter',
-  '/reserver',
-  '/chat',
-  '/admin',
+  "/dashboard",
+  "/wallet",
+  "/transactions",
+  "/messages",
+  "/profil",
+  "/reservations",
+  "/avis",
+  "/litiges",
+  "/acheter",
+  "/reserver",
+  "/chat",
+  "/admin",
 ];
 
-const authRoutes = ['/auth'];
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({ request });
 
-export function middleware(request: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { pathname } = request.nextUrl;
-
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    pathname.startsWith(route)
+  const isProtectedRoute = protectedRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  const isAuthRoute = authRoutes.some(
-    (route) => pathname === route
-  );
-
-  /*
-    IMPORTANT :
-    La vraie vérification Supabase sera renforcée
-    avec la configuration finale du client SSR.
-
-    Ce middleware sert déjà à centraliser
-    la protection des routes.
-  */
-
-  if (isAuthRoute) {
-    return NextResponse.next();
+  if (isProtectedRoute && !user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/auth";
+    url.searchParams.set("redirectTo", pathname);
+    return NextResponse.redirect(url);
   }
 
-  if (isProtectedRoute) {
-    return NextResponse.next();
+  if (pathname === "/auth" && user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
   matcher: [
-    '/dashboard/:path*',
-    '/wallet/:path*',
-    '/transactions/:path*',
-    '/messages/:path*',
-    '/profil/:path*',
-    '/reservations/:path*',
-    '/avis/:path*',
-    '/litiges/:path*',
-    '/acheter/:path*',
-    '/reserver/:path*',
-    '/chat/:path*',
-    '/admin/:path*',
+    "/dashboard/:path*",
+    "/wallet/:path*",
+    "/transactions/:path*",
+    "/messages/:path*",
+    "/profil/:path*",
+    "/reservations/:path*",
+    "/avis/:path*",
+    "/litiges/:path*",
+    "/acheter/:path*",
+    "/reserver/:path*",
+    "/chat/:path*",
+    "/admin/:path*",
+    "/auth",
   ],
 };
