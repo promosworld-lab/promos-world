@@ -3,4 +3,5 @@ import type { Wallet, WalletTransaction } from "@/types/database-v2";
 export const walletService={
  async getWallet(userId:string):Promise<Wallet|null>{const{data,error}=await supabase.from("wallets").select("*").eq("user_id",userId).maybeSingle();if(error)throw error;return data as Wallet|null},
  async getTransactions(userId:string):Promise<WalletTransaction[]>{const{data,error}=await supabase.from("wallet_transactions").select("*").eq("user_id",userId).order("created_at",{ascending:false});if(error)throw error;return(data??[])as WalletTransaction[]},
+ async creditTestWallet(amount:number){const{data,error}=await supabase.rpc("credit_test_wallet",{p_amount:amount});if(error)throw error;return data},
 };
