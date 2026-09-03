@@ -1,55 +1,24 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/client";
+import type { Wallet, WalletTransaction } from "@/lib/types";
 
 export const walletService = {
-  async getWallet(userId: string) {
+  async getWallet(userId: string): Promise<Wallet | null> {
     const { data, error } = await supabase
       .from("wallets")
       .select("*")
       .eq("user_id", userId)
-      .single();
-
-    if (error && error.code !== "PGRST116") {
-      throw error;
-    }
-
-    return data;
+      .maybeSingle();
+    if (error) throw error;
+    return data as Wallet | null;
   },
 
-  async getTransactions(userId: string) {
+  async getTransactions(userId: string): Promise<WalletTransaction[]> {
     const { data, error } = await supabase
       .from("wallet_transactions")
       .select("*")
       .eq("user_id", userId)
-      .order("created_at", {
-        ascending: false,
-      });
-
+      .order("created_at", { ascending: false });
     if (error) throw error;
-
-    return data;
-  },
-
-  async createWallet(userId: string) {
-    const { data, error } = await supabase
-      .from("wallets")
-      .insert({
-        user_id: userId,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return data;
-  },
-
-  async getOrCreateWallet(userId: string) {
-    let wallet = await this.getWallet(userId);
-
-    if (!wallet) {
-      wallet = await this.createWallet(userId);
-    }
-
-    return wallet;
+    return (data ?? []) as WalletTransaction[];
   },
 };
