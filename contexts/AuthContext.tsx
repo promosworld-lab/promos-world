@@ -70,15 +70,17 @@ export function AuthProvider({children}:{children:ReactNode}) {
 
   const signUp=async(payload:SignUpData)=>{
     const {nom,email,password,telephone,adresse,role,pays,ville}=payload;
+    const normalizedPhone=telephone.replace(/[^0-9+]/g, '').trim();
+    if(!normalizedPhone) throw new Error('Le numéro de téléphone est obligatoire.');
     const {data,error}=await supabase.auth.signUp({
       email,password,
-      options:{data:{nom,role,pays,ville}}
+      options:{data:{nom,role,pays,ville,telephone:normalizedPhone}}
     });
     if(error) throw new Error(error.message);
     if(!data.user) throw new Error("Impossible de créer le compte.");
 
     const {error:profileError}=await supabase.from("profiles").upsert({
-      id:data.user.id, nom, email, telephone:telephone.trim(), adresse:adresse||"",
+      id:data.user.id, nom, email, telephone:normalizedPhone, adresse:adresse||"",
       role,pays,ville,kyc_status:"non_soumis"
     },{onConflict:"id"});
     if(profileError) throw new Error(profileError.message);
