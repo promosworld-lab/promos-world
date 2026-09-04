@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, User, MapPin, Store, Users } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, User, MapPin, Store, Users, Phone } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/hooks/useLanguage';
 
@@ -20,6 +20,7 @@ export default function AuthPage() {
   const [nom, setNom] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [telephone, setTelephone] = useState('');
   const [role, setRole] = useState<'client' | 'vendeur'>('client');
   const [pays, setPays] = useState('Bénin');
   const [ville, setVille] = useState('');
@@ -42,6 +43,7 @@ export default function AuthPage() {
         nom: nom.trim(),
         email: email.trim(),
         password,
+        telephone: telephone.trim(),
         role,
         pays,
         ville: ville.trim(),
@@ -96,6 +98,8 @@ export default function AuthPage() {
                 <Field label={t.city} icon={<MapPin size={19}/>}><input value={ville} onChange={(e)=>setVille(e.target.value)} required placeholder="Votre ville" className="auth-input"/></Field>
               </div>
             </>}
+
+            {mode === 'register' && <Field label="Numéro de téléphone" icon={<Phone size={19}/>}><input type="tel" value={telephone} onChange={(e)=>setTelephone(e.target.value)} required placeholder="+229 XX XX XX XX" className="auth-input"/></Field>}
 
             <Field label="Email" icon={<Mail size={19}/>}><input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required placeholder="vous@email.com" className="auth-input"/></Field>
             <Field label="Mot de passe" icon={<Lock size={19}/>} right={<button type="button" onClick={()=>setShowPassword(!showPassword)} className="text-zinc-500 hover:text-white">{showPassword?<EyeOff size={19}/>:<Eye size={19}/>}</button>}><input type={showPassword?'text':'password'} value={password} onChange={(e)=>setPassword(e.target.value)} required minLength={6} placeholder="Minimum 6 caractères" className="auth-input"/></Field>
