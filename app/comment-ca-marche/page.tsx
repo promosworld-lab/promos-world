@@ -46,7 +46,7 @@ export default function CommentCaMarchePage() {
         </section>
 
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/marketplace" className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-black">Découvrir le marketplace</Link>
+          <Link href="/promo" className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-black">Découvrir le marketplace</Link>
           <Link href="/wallet" className="rounded-xl border border-white/10 px-5 py-3 font-bold">Voir mon portefeuille</Link>
         </div>
       </div>
