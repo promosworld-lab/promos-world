@@ -1,0 +1,8 @@
+import { supabase } from "@/lib/supabase/client";
+import type { PublicationPromotion, PromotionPlacement } from "@/types/database";
+export const publicationPromotionService={
+ async getActiveForPublication(publicationId:string):Promise<PublicationPromotion|null>{const now=new Date().toISOString();const{data,error}=await supabase.from("publication_promotions").select("*").eq("publication_id",publicationId).eq("statut","active").lte("date_debut",now).gte("date_fin",now).maybeSingle();if(error)throw error;return data as PublicationPromotion|null},
+ async getActiveForPlacement(emplacement:PromotionPlacement):Promise<PublicationPromotion[]>{const now=new Date().toISOString();const{data,error}=await supabase.from("publication_promotions").select("*, publication:promotions(*)").eq("statut","active").eq("emplacement",emplacement).lte("date_debut",now).gte("date_fin",now).order("created_at",{ascending:false});if(error)throw error;return(data??[])as PublicationPromotion[]},
+ async getByVendeur(vendeurId:string):Promise<PublicationPromotion[]>{const{data,error}=await supabase.from("publication_promotions").select("*, publication:promotions(*)").eq("vendeur_id",vendeurId).order("created_at",{ascending:false});if(error)throw error;return(data??[])as PublicationPromotion[]},
+ async request(payload:Omit<PublicationPromotion,"id"|"vendeur_id"|"statut"|"created_at"|"updated_at">):Promise<PublicationPromotion>{const{data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Utilisateur non authentifié.");const{data,error}=await supabase.from("publication_promotions").insert({...payload,vendeur_id:user.id,statut:"en_attente"}).select().single();if(error)throw error;return data as PublicationPromotion},
+};

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { promotionsService } from "@/lib/services/promotions.service";
-import type { Promotion } from "@/types";
+import type { Promotion } from "@/lib/types";
 
 export function usePromotions() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -14,7 +14,7 @@ export function usePromotions() {
     setError(null);
     try {
       const data = await promotionsService.getAll();
-      setPromotions(data as Promotion[]);
+      setPromotions((data ?? []) as Promotion[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger les publications.");
     } finally {
@@ -22,9 +22,6 @@ export function usePromotions() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadPromotions();
-  }, [loadPromotions]);
-
+  useEffect(() => { void loadPromotions(); }, [loadPromotions]);
   return { promotions, loading, error, refresh: loadPromotions };
 }

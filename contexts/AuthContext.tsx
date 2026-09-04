@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useCallback, useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
 import type { Profile } from "@/types";
 
@@ -10,7 +11,7 @@ interface SignUpData {
   role: "client" | "vendeur"; pays: string; ville: string;
 }
 interface AuthContextType {
-  user: any; profile: Profile | null; loading: boolean;
+  user: User | null; profile: Profile | null; loading: boolean;
   isAuthenticated: boolean; isAdmin: boolean; isVendeur: boolean; isClient: boolean;
   signIn: (email:string,password:string)=>Promise<void>;
   signUp: (data:SignUpData)=>Promise<void>;
@@ -19,7 +20,7 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({children}:{children:ReactNode}) {
-  const [user,setUser]=useState<any>(null);
+  const [user,setUser]=useState<User|null>(null);
   const [profile,setProfile]=useState<Profile|null>(null);
   const [loading,setLoading]=useState(true);
 
@@ -29,7 +30,7 @@ export function AuthProvider({children}:{children:ReactNode}) {
     setProfile((data as Profile|null) ?? null);
   },[]);
 
-  const refreshProfile=useCallback(async()=>{ if(user?.id) await loadProfile(user.id); },[user?.id,loadProfile]);
+  const refreshProfile=useCallback(async()=>{ if(user?.id) await loadProfile(user.id); },[user,loadProfile]);
 
   useEffect(()=>{
     let mounted=true;
@@ -82,8 +83,6 @@ export function AuthProvider({children}:{children:ReactNode}) {
     },{onConflict:"id"});
     if(profileError) throw new Error(profileError.message);
 
-    // If email confirmation is disabled, Supabase returns a session immediately.
-    // Load the profile so the UI never remains in an indeterminate state.
     if (data.session) {
       setUser(data.user);
       await loadProfile(data.user.id);
