@@ -1,55 +1,7 @@
 "use client";
-
 import Link from "next/link";
-import { ArrowLeft, Clock3, ShieldCheck, Wallet, ShoppingBag, Scale, Star, Megaphone } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CheckCircle2, Clock3, MessageCircle, PackageCheck, Scale, ShieldCheck, ShoppingBag, Star, Store, Truck, UserRound, Wallet } from "lucide-react";
 
-const sections = [
-  { icon: Wallet, title: "Votre portefeuille", text: "Votre portefeuille Promo's World est la source de tous vos paiements internes. Vous pouvez l'alimenter ou demander un retrait via les moyens de paiement disponibles dans votre pays. Les achats, réservations et services payants de la plateforme utilisent ensuite ce solde." },
-  { icon: ShoppingBag, title: "Achat direct", text: "Lors d'un achat, le montant est bloqué dans votre portefeuille. Il n'est versé au vendeur qu'après la livraison et votre confirmation. La commission de 2 % de Promo's World est prélevée uniquement lorsque la transaction est finalisée." },
-  { icon: Clock3, title: "Réservation à 20 %", text: "Une réservation bloque 20 % du prix de l'article. Le vendeur dispose de 36 heures pour accepter ou refuser. En cas de refus, l'acompte est restitué au client. Après acceptation, le client dispose de 3 mois pour payer le solde." },
-  { icon: ShieldCheck, title: "Livraison et protection", text: "Après paiement intégral, le vendeur dispose de 48 heures pour expédier. Le client peut accorder une extension facultative de 36 heures. Après réception, le client dispose de 48 heures pour vérifier la commande avant la libération des fonds." },
-  { icon: Scale, title: "Expiration et litige", text: "Si le solde n'est pas payé dans les 3 mois, la réservation expire. L'acompte est alors réparti à hauteur de 50 % pour le client, 25 % pour le vendeur et 25 % pour Promo's World. En cas de problème, un litige peut être ouvert et les fonds restent protégés pendant l'examen." },
-  { icon: Star, title: "Avis", text: "Les avis servent à partager une expérience réelle après une transaction finalisée. Ils contribuent à la confiance entre acheteurs et vendeurs." },
-  { icon: Megaphone, title: "Publications sponsorisées", text: "Les vendeurs peuvent utiliser leur portefeuille pour promouvoir leurs publications. Les campagnes sont soumises aux règles et à la validation de Promo's World selon l'emplacement choisi." },
-];
-
-export default function CommentCaMarchePage() {
-  return (
-    <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <Link href="/" className="inline-flex items-center gap-2 text-sm text-zinc-400 transition hover:text-white"><ArrowLeft size={16} /> Retour</Link>
-        <header className="mt-10 max-w-3xl">
-          <p className="font-bold uppercase tracking-widest text-orange-500">Promo's World</p>
-          <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Comprendre la plateforme avant d'utiliser votre argent</h1>
-          <p className="mt-5 text-base leading-7 text-zinc-400">Nous voulons que chaque utilisateur connaisse les règles avant d'acheter, réserver, vendre ou utiliser un service payant. Voici le fonctionnement essentiel de Promo's World.</p>
-        </header>
-
-        <div className="mt-10 grid gap-4 md:grid-cols-2">
-          {sections.map(({ icon: Icon, title, text }) => (
-            <section key={title} className="rounded-3xl border border-white/10 bg-zinc-950 p-6">
-              <Icon className="text-orange-500" size={24} />
-              <h2 className="mt-4 text-xl font-bold">{title}</h2>
-              <p className="mt-3 text-sm leading-6 text-zinc-400">{text}</p>
-            </section>
-          ))}
-        </div>
-
-        <section className="mt-6 rounded-3xl border border-orange-500/20 bg-orange-500/10 p-6">
-          <h2 className="text-xl font-black">À retenir</h2>
-          <ul className="mt-4 space-y-3 text-sm leading-6 text-zinc-200">
-            <li>• Les opérations financières internes utilisent votre portefeuille Promo's World.</li>
-            <li>• Les fonds engagés dans une transaction restent bloqués jusqu'à son issue conforme.</li>
-            <li>• La commission de 2 % n'est prélevée qu'à la finalisation réussie de la transaction.</li>
-            <li>• Les délais de 36 h, 3 mois et 48 h sont des éléments essentiels du processus.</li>
-            <li>• En cas de désaccord, utilisez le système de litige plutôt que de contourner la procédure.</li>
-          </ul>
-        </section>
-
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/promo" className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-black">Découvrir le marketplace</Link>
-          <Link href="/wallet" className="rounded-xl border border-white/10 px-5 py-3 font-bold">Voir mon portefeuille</Link>
-        </div>
-      </div>
-    </main>
-  );
-}
+const buyer=[["1","Créez votre compte","Renseignez vos informations et utilisez un numéro de téléphone personnel pour renforcer l'identification de votre compte.",UserRound],["2","Trouvez la bonne offre","Explorez les articles et promotions, puis consultez les informations importantes avant de choisir.",ShoppingBag],["3","Achetez ou réservez","Choisissez l'achat direct ou la réservation lorsque l'offre le permet. Les règles et montants applicables sont affichés dans le parcours.",Wallet],["4","Suivez l'exécution","Le vendeur prépare puis expédie selon les étapes prévues. Gardez un œil sur les délais et confirmations.",Truck],["5","Réceptionnez et vérifiez","Après réception, contrôlez la conformité de l'article avant la finalisation de la transaction.",PackageCheck],["6","Finalisez ou signalez un problème","Si tout est conforme, la transaction se finalise. En cas de désaccord, ouvrez un litige au lieu de contourner la procédure.",Scale]];
+const seller=[["Publiez clairement","Ajoutez des informations fiables, un prix, le stock et les éléments nécessaires pour permettre une décision éclairée."],["Répondez et suivez vos demandes","Utilisez la messagerie et votre espace vendeur pour suivre votre activité."],["Respectez les délais","Les confirmations, l'acceptation des réservations et l'expédition font partie de l'expérience de confiance."],["Protégez votre réputation","Une expérience sérieuse favorise les avis positifs et la confiance des futurs clients."]];
+export default function CommentCaMarchePage(){return <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-6xl"><Link href="/" className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white"><ArrowLeft size={16}/>Retour à l'accueil</Link><header className="mx-auto mt-12 max-w-4xl text-center"><p className="font-bold uppercase tracking-[.2em] text-orange-500">GUIDE PROMO'S WORLD</p><h1 className="mt-4 text-4xl font-black sm:text-6xl">Comprenez votre parcours avant de commencer.</h1><p className="mx-auto mt-6 max-w-3xl leading-8 text-zinc-400">Promo's World n'est pas seulement un endroit pour trouver des offres : la plateforme organise le parcours entre acheteur et vendeur afin que chacun sache quoi faire, à quel moment et quelles protections utiliser.</p></header><section className="mt-16"><div className="flex items-center gap-3"><div className="rounded-xl bg-orange-500 p-3 text-black"><ShoppingBag/></div><div><p className="font-bold text-orange-500">PARCOURS CLIENT</p><h2 className="text-3xl font-black">De la découverte à la finalisation</h2></div></div><div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{buyer.map(([n,title,text,Icon]:any)=><article key={n} className="rounded-3xl border border-white/10 bg-zinc-950 p-6"><div className="flex items-center justify-between"><span className="text-4xl font-black text-orange-500">{n}</span><Icon size={24} className="text-zinc-500"/></div><h3 className="mt-5 text-xl font-bold">{title}</h3><p className="mt-3 text-sm leading-6 text-zinc-400">{text}</p></article>)}</div></section><section className="mt-16 rounded-[2rem] border border-orange-500/20 bg-orange-500/5 p-6 sm:p-10"><div className="flex items-center gap-3"><div className="rounded-xl bg-orange-500 p-3 text-black"><Store/></div><div><p className="font-bold text-orange-500">EXPÉRIENCE VENDEUR</p><h2 className="text-3xl font-black">Vendre avec des règles claires</h2></div></div><div className="mt-8 grid gap-4 md:grid-cols-2">{seller.map(([title,text])=><div key={title} className="rounded-2xl border border-white/10 bg-black/60 p-5"><CheckCircle2 className="text-orange-500"/><h3 className="mt-3 font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-zinc-400">{text}</p></div>)}</div></section><section className="mt-16 grid gap-6 lg:grid-cols-2"><article className="rounded-3xl border border-white/10 bg-zinc-950 p-7"><ShieldCheck className="text-orange-500" size={30}/><h2 className="mt-4 text-2xl font-black">Comment les transactions sont encadrées</h2><p className="mt-4 leading-7 text-zinc-400">Les opérations financières suivent les étapes prévues par la plateforme. Les confirmations, délais et statuts permettent de savoir où en est chaque transaction et évitent de dépendre uniquement d'une promesse entre deux utilisateurs.</p><ul className="mt-5 space-y-3 text-sm text-zinc-300"><li>• Fonds et opérations suivis par le portefeuille.</li><li>• Étapes de confirmation avant la libération finale.</li><li>• Délais structurés selon le type d'opération.</li><li>• Possibilité d'ouvrir un litige lorsqu'une situation nécessite une intervention.</li></ul></article><article className="rounded-3xl border border-white/10 bg-zinc-950 p-7"><Clock3 className="text-orange-500" size={30}/><h2 className="mt-4 text-2xl font-black">Les règles importantes à connaître</h2><div className="mt-5 space-y-4 text-sm leading-6 text-zinc-400"><p><b className="text-white">Achat direct :</b> le parcours prévoit paiement, expédition, réception, vérification puis finalisation.</p><p><b className="text-white">Réservation :</b> l'acompte bloque l'article selon les règles affichées, puis le processus prévoit l'acceptation, le paiement du solde et la suite de l'exécution.</p><p><b className="text-white">Litige :</b> lorsqu'un problème survient, utilisez la procédure de la plateforme afin que la situation soit traitée dans un cadre identifiable.</p></div></article></section><section className="mt-10 grid gap-4 md:grid-cols-3"><div className="rounded-2xl border border-white/10 p-5"><MessageCircle className="text-orange-500"/><h3 className="mt-3 font-bold">Besoin d'aide ?</h3><p className="mt-2 text-sm text-zinc-500">Le service client est accessible depuis votre espace de messagerie lorsqu'il est configuré.</p></div><div className="rounded-2xl border border-white/10 p-5"><BadgeCheck className="text-orange-500"/><h3 className="mt-3 font-bold">Vérification vendeur</h3><p className="mt-2 text-sm text-zinc-500">Les mécanismes de vérification renforcent progressivement la confiance sur la plateforme.</p></div><div className="rounded-2xl border border-white/10 p-5"><Star className="text-orange-500"/><h3 className="mt-3 font-bold">Avis et réputation</h3><p className="mt-2 text-sm text-zinc-500">Les expériences finalisées contribuent à construire une réputation plus utile pour les futurs utilisateurs.</p></div></section><section className="mt-12 flex flex-col justify-center gap-3 sm:flex-row"><Link href="/promo" className="rounded-xl bg-orange-500 px-6 py-4 text-center font-black text-black">Découvrir le marketplace</Link><Link href="/auth" className="rounded-xl border border-white/15 px-6 py-4 text-center font-bold">Créer mon compte</Link></section></div></main>}
