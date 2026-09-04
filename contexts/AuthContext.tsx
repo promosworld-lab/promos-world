@@ -7,7 +7,7 @@ import type { Profile } from "@/types";
 
 interface SignUpData {
   nom: string; email: string; password: string;
-  telephone?: string; adresse?: string;
+  telephone: string; adresse?: string;
   role: "client" | "vendeur"; pays: string; ville: string;
 }
 interface AuthContextType {
@@ -78,7 +78,7 @@ export function AuthProvider({children}:{children:ReactNode}) {
     if(!data.user) throw new Error("Impossible de créer le compte.");
 
     const {error:profileError}=await supabase.from("profiles").upsert({
-      id:data.user.id, nom, email, telephone:telephone||"", adresse:adresse||"",
+      id:data.user.id, nom, email, telephone:telephone.trim(), adresse:adresse||"",
       role,pays,ville,kyc_status:"non_soumis"
     },{onConflict:"id"});
     if(profileError) throw new Error(profileError.message);
