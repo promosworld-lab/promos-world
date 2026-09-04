@@ -39,6 +39,7 @@ export default function AuthPage() {
         return;
       }
 
+      if (!telephone.trim()) throw new Error('Le numéro de téléphone est obligatoire.');
       await signUp({
         nom: nom.trim(),
         email: email.trim(),
