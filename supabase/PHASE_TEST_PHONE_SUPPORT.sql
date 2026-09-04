@@ -1,5 +1,6 @@
 -- Promo's World: phone uniqueness + customer service
 alter table public.profiles add column if not exists telephone text;
+-- Store phone in auth metadata as well; profiles remains the canonical marketplace identity record.
 update public.profiles set telephone = null where telephone = '';
 alter table public.profiles drop constraint if exists profiles_telephone_unique;
 create unique index if not exists profiles_telephone_unique_idx on public.profiles (telephone) where telephone is not null;
