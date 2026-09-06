@@ -12,9 +12,10 @@ const CATEGORIES = ['Mode & accessoires','Beauté & soins','Maison & décoration
 const MAX_FILES = 10;
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const ACCEPTED = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime';
-type FormState = { type: 'article' | 'promotion'; titre: string; description: string; categorie: string; prix_original: string; prix_promo: string; stock: string; pays: string; ville: string; delai: string; debut: string; fin: string };
+
+type FormState = { type:'article'|'promotion'; titre:string; description:string; categorie:string; prix_original:string; prix_promo:string; stock:string; pays:string; ville:string; delai:string; debut:string; fin:string };
 type MediaPreview = { file: File; url: string };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date().toISOString().slice(0,10);
 
 export default function PublierPage() {
   const router = useRouter();
@@ -23,57 +24,113 @@ export default function PublierPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<MediaPreview[]>([]);
-  const [f, setF] = useState<FormState>({ type: 'article', titre: '', description: '', categorie: 'Autres', prix_original: '', prix_promo: '', stock: '1', pays: '', ville: '', delai: '', debut: today(), fin: '' });
+  const [f, setF] = useState<FormState>({ type:'article', titre:'', description:'', categorie:'Autres', prix_original:'', prix_promo:'', stock:'1', pays:'', ville:'', delai:'', debut:today(), fin:'' });
 
   useEffect(() => {
     if (profile) setF((x) => ({ ...x, pays: profile.pays || '', ville: profile.ville || '' }));
     void supabase.rpc('is_test_mode').then(({ data }) => setTestMode(data === true));
   }, [profile]);
   useEffect(() => () => files.forEach((x) => URL.revokeObjectURL(x.url)), [files]);
-  const discount = useMemo(() => { const original = Number(f.prix_original); const promo = Number(f.prix_promo); if (f.type !== 'promotion' || !original || !promo || promo >= original) return null; return Math.round((1 - promo / original) * 100); }, [f.type, f.prix_original, f.prix_promo]);
+
+  const discount = useMemo(() => {
+    const original = Number(f.prix_original), promo = Number(f.prix_promo);
+    if (f.type !== 'promotion' || !original || !promo || promo >= original) return null;
+    return Math.round((1 - promo / original) * 100);
+  }, [f.type, f.prix_original, f.prix_promo]);
 
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-black"><LoadingSpinner /></main>;
   if (!user) return <main className="flex min-h-screen items-center justify-center bg-black text-white">Connectez-vous pour publier.</main>;
   const userId = user.id;
   const canPublish = profile?.role === 'vendeur' && (profile.kyc_status === 'verifie' || testMode);
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => setF((current) => ({ ...current, [key]: value }));
-  const addFiles = (list: FileList | null) => { if (!list) return; setMessage(''); const incoming = Array.from(list); if (files.length + incoming.length > MAX_FILES) { setMessage(`Vous pouvez ajouter au maximum ${MAX_FILES} médias.`); return; } const invalid = incoming.find((file) => { const media = file.type.startsWith('image/') || file.type.startsWith('video/'); return !media || file.size > MAX_FILE_SIZE; }); if (invalid) { setMessage(`${invalid.name} est invalide. Utilisez une image ou une vidéo de 50 Mo maximum.`); return; } setFiles((current) => current.concat(incoming.map((file) => ({ file, url: URL.createObjectURL(file) })))); };
-  const removeFile = (index: number) => setFiles((current) => { const item = current[index]; if (item) URL.revokeObjectURL(item.url); return current.filter((_, i) => i !== index); });
-  const validate = () => { const title = f.titre.trim(); const description = f.description.trim(); const original = Number(f.prix_original); const promo = Number(f.prix_promo); const stock = Number(f.stock); const delay = f.delai ? Number(f.delai) : null; if (title.length < 3) return 'Le titre doit contenir au moins 3 caractères.'; if (description.length < 10) return 'Ajoutez une description suffisamment précise.'; if (!f.categorie) return 'Sélectionnez une catégorie.'; if (!Number.isFinite(original) || original <= 0) return 'Le prix doit être supérieur à 0.'; if (!Number.isInteger(stock) || stock < 1) return 'Le stock doit être un entier supérieur ou égal à 1.'; if (f.type === 'promotion') { if (!Number.isFinite(promo) || promo <= 0 || promo >= original) return 'Le prix promotionnel doit être inférieur au prix original.'; if (!f.debut || !f.fin || f.fin < f.debut) return 'La période de promotion est invalide.'; if (f.debut < today()) return 'La date de début ne peut pas être antérieure à aujourd’hui.'; } if (delay !== null && (!Number.isInteger(delay) || delay < 0)) return 'Le délai de livraison doit être un nombre entier positif.'; if (!files.length) return 'Ajoutez au moins une photo ou vidéo de l’article.'; return null; };
 
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); if (!canPublish || saving) return; const error = validate(); if (error) { setMessage(error); window.scrollTo({ top: 0, behavior: 'smooth' }); return; } setSaving(true); setMessage('');
+  const update = <K extends keyof FormState>(key:K, value:FormState[K]) => setF((x) => ({ ...x, [key]:value }));
+  const addFiles = (list:FileList|null) => {
+    if (!list) return;
+    setMessage('');
+    const incoming = Array.from(list);
+    if (files.length + incoming.length > MAX_FILES) { setMessage(`Maximum ${MAX_FILES} médias.`); return; }
+    const invalid = incoming.find((file) => (!(file.type.startsWith('image/') || file.type.startsWith('video/'))) || file.size > MAX_FILE_SIZE);
+    if (invalid) { setMessage(`${invalid.name} est invalide. Image/vidéo uniquement, 50 Mo maximum.`); return; }
+    setFiles((x) => x.concat(incoming.map((file) => ({ file, url:URL.createObjectURL(file) }))));
+  };
+  const removeFile = (index:number) => setFiles((x) => { const item=x[index]; if(item) URL.revokeObjectURL(item.url); return x.filter((_,i)=>i!==index); });
+  const validate = () => {
+    const title=f.titre.trim(), description=f.description.trim(), original=Number(f.prix_original), promo=Number(f.prix_promo), stock=Number(f.stock), delay=f.delai?Number(f.delai):null;
+    if(title.length<3) return 'Le titre doit contenir au moins 3 caractères.';
+    if(description.length<10) return 'Ajoutez une description suffisamment précise.';
+    if(!f.categorie) return 'Sélectionnez une catégorie.';
+    if(!Number.isFinite(original)||original<=0) return 'Le prix doit être supérieur à 0.';
+    if(!Number.isInteger(stock)||stock<1) return 'Le stock doit être un entier supérieur ou égal à 1.';
+    if(f.type==='promotion') {
+      if(!Number.isFinite(promo)||promo<=0||promo>=original) return 'Le prix promotionnel doit être inférieur au prix original.';
+      if(!f.debut||!f.fin||f.fin<f.debut) return 'La période de promotion est invalide.';
+      if(f.debut<today()) return 'La date de début ne peut pas être antérieure à aujourd’hui.';
+    }
+    if(delay!==null&&(!Number.isInteger(delay)||delay<0)) return 'Le délai de livraison doit être un nombre entier positif.';
+    if(!files.length) return 'Ajoutez au moins une photo ou vidéo de l’article.';
+    return null;
+  };
+
+  async function submit(e:FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if(!canPublish||saving) return;
+    const validation=validate();
+    if(validation){setMessage(validation);window.scrollTo({top:0,behavior:'smooth'});return;}
+    setSaving(true);setMessage('');
     try {
-      const payload: PromotionInput = { titre: f.titre.trim(), description: f.description.trim(), categorie: f.categorie, prix_original: Number(f.prix_original), prix_promo: f.type === 'promotion' ? Number(f.prix_promo) : Number(f.prix_original), stock: Number(f.stock), pays: f.pays.trim() || null, ville: f.ville.trim() || null, delai_livraison_jours: f.delai ? Number(f.delai) : null, publication_type: f.type, statut: 'en_attente', is_active: true, date_debut_promo: f.type === 'promotion' ? new Date(`${f.debut}T00:00:00`).toISOString() : null, date_fin_promo: f.type === 'promotion' ? new Date(`${f.fin}T23:59:59`).toISOString() : null };
-      const publication = await promotionsService.create(payload);
-      for (let i = 0; i < files.length; i += 1) {
-        const file = files[i].file; const ext = file.name.split('.').pop() || 'bin'; const path = `${userId}/${publication.id}/${i}-${crypto.randomUUID()}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from('publication-media').upload(path, file, { upsert: false, contentType: file.type });
-        if (uploadError) throw uploadError;
-        const { error: mediaError } = await supabase.from('promotion_media').insert({ promotion_id: publication.id, vendeur_id: userId, storage_path: path, media_type: file.type.startsWith('video/') ? 'video' : 'image', position: i });
-        if (mediaError) throw mediaError;
+      const payload:PromotionInput={ titre:f.titre.trim(), description:f.description.trim(), categorie:f.categorie, prix_original:Number(f.prix_original), prix_promo:f.type==='promotion'?Number(f.prix_promo):Number(f.prix_original), stock:Number(f.stock), pays:f.pays.trim()||null, ville:f.ville.trim()||null, delai_livraison_jours:f.delai?Number(f.delai):null, publication_type:f.type, statut:'en_attente', is_active:true, date_debut_promo:f.type==='promotion'?new Date(`${f.debut}T00:00:00`).toISOString():null, date_fin_promo:f.type==='promotion'?new Date(`${f.fin}T23:59:59`).toISOString():null };
+      const publication=await promotionsService.create(payload);
+      for(let i=0;i<files.length;i+=1){
+        const file=files[i].file, ext=file.name.split('.').pop()||'bin', path=`${userId}/${publication.id}/${i}-${crypto.randomUUID()}.${ext}`;
+        const {error:uploadError}=await supabase.storage.from('publication-media').upload(path,file,{upsert:false,contentType:file.type});
+        if(uploadError) throw uploadError;
+        const {error:mediaError}=await supabase.from('promotion_media').insert({promotion_id:publication.id,vendeur_id:userId,storage_path:path,media_type:file.type.startsWith('video/')?'video':'image',position:i});
+        if(mediaError) throw mediaError;
       }
       router.push('/dashboard');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Publication impossible.'); } finally { setSaving(false); }
+    } catch(error){setMessage(error instanceof Error?error.message:'Publication impossible.');}
+    finally{setSaving(false);}
   }
 
-  if (!canPublish) return <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6"><div className="mx-auto max-w-2xl rounded-3xl border border-orange-500/30 bg-orange-500/10 p-8"><LockKeyhole className="text-orange-500" size={28} /><h1 className="mt-4 text-2xl font-black">Publication réservée aux vendeurs</h1><p className="mt-2 text-zinc-300">Votre compte vendeur doit être vérifié avant toute publication.</p></div></main>;
+  if(!canPublish) return <main className="min-h-screen bg-black px-4 py-8 text-white"><div className="mx-auto max-w-2xl rounded-3xl border border-orange-500/30 bg-orange-500/10 p-8"><LockKeyhole size={28} className="text-orange-500"/><h1 className="mt-4 text-2xl font-black">Publication réservée aux vendeurs</h1><p className="mt-2 text-zinc-300">Votre compte vendeur doit être vérifié avant toute publication.</p></div></main>;
 
-  return <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6"><div className="mx-auto max-w-6xl">
-    <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-bold tracking-wide text-orange-500">ESPACE VENDEUR</p><h1 className="mt-1 text-3xl font-black sm:text-4xl">Publier un article</h1><p className="mt-2 max-w-2xl text-zinc-400">Créez une annonce claire, complète et rassurante pour les acheteurs.</p></div><div className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950 px-4 py-2 text-sm text-zinc-300"><Package size={17} className="text-orange-500" /> Publication marketplace</div></header>
-    <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_360px]"><section className="space-y-6 rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-8">
-      {message && <div role="alert" className="flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertCircle size={19} className="mt-0.5 shrink-0" /><span>{message}</span></div>}
-      <div><h2 className="text-xl font-bold">1. Type de publication</h2><p className="mt-1 text-sm text-zinc-500">Choisissez entre un article permanent et une promotion datée.</p><div className="mt-4 grid grid-cols-2 gap-3">{(['article','promotion'] as const).map((type) => <button key={type} type="button" onClick={() => update('type', type)} className={`rounded-2xl border p-4 text-left transition ${f.type === type ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black hover:border-white/30'}`}><b className="block">{type === 'article' ? 'Article normal' : 'Promotion'}</b><span className="mt-1 block text-xs text-zinc-500">{type === 'article' ? 'Visible jusqu’à épuisement ou arrêt.' : 'Avec prix réduit et dates de validité.'}</span></button>)}</div></div>
-      <div><h2 className="text-xl font-bold">2. Informations du produit</h2><div className="mt-4 space-y-4"><Field label="Titre de l’annonce" value={f.titre} onChange={(v) => update('titre', v)} placeholder="Ex. Smartphone Samsung Galaxy A55 5G" required maxLength={120} /><label className="block"><span className="mb-2 block text-sm font-medium text-zinc-400">Catégorie <b className="text-orange-500">*</b></span><select value={f.categorie} onChange={(e) => update('categorie', e.target.value)} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 outline-none focus:border-orange-500">{CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select></label><label className="block"><span className="mb-2 block text-sm font-medium text-zinc-400">Description <b className="text-orange-500">*</b></span><textarea value={f.description} onChange={(e) => update('description', e.target.value)} maxLength={3000} placeholder="Décrivez l’état, les caractéristiques, les accessoires inclus et les conditions de vente…" className="min-h-36 w-full rounded-xl border border-white/10 bg-black p-4 outline-none focus:border-orange-500" /><span className="mt-1 block text-right text-xs text-zinc-600">{f.description.length}/3000</span></label></div></div>
-      <div><h2 className="text-xl font-bold">3. Prix et disponibilité</h2><div className="mt-4 grid gap-4 sm:grid-cols-2"><Field label={f.type === 'promotion' ? 'Prix original (FCFA)' : 'Prix (FCFA)'} type="number" min="1" value={f.prix_original} onChange={(v) => update('prix_original', v)} required /><Field label="Stock disponible" type="number" min="1" step="1" value={f.stock} onChange={(v) => update('stock', v)} required />{f.type === 'promotion' && <Field label="Prix promotionnel (FCFA)" type="number" min="1" value={f.prix_promo} onChange={(v) => update('prix_promo', v)} required />}</div>{discount !== null && <p className="mt-3 rounded-xl bg-orange-500/10 p-3 text-sm text-orange-300">Remise affichée : <b>-{discount}%</b></p>}{f.type === 'promotion' && <div className="mt-4 grid gap-4 rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 sm:grid-cols-2"><Field label="Début de la promotion" type="date" value={f.debut} min={today()} onChange={(v) => update('debut', v)} required /><Field label="Fin de la promotion" type="date" min={f.debut || today()} value={f.fin} onChange={(v) => update('fin', v)} required /></div>}</div></div>
-      <div><h2 className="text-xl font-bold">4. Photos et vidéos</h2><p className="mt-1 text-sm text-zinc-500">Ajoutez jusqu’à {MAX_FILES} médias. Le premier sera la couverture.</p><label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/20 bg-black p-5 text-center hover:border-orange-500"><ImagePlus size={28} className="text-orange-500" /><b className="mt-2">Ajouter des photos ou vidéos</b><span className="mt-1 text-xs text-zinc-600">JPG, PNG, WEBP, GIF, MP4, WEBM ou MOV · 50 Mo max/fichier</span><input type="file" accept={ACCEPTED} multiple onChange={(e) => { addFiles(e.target.files); e.currentTarget.value = ''; }} className="hidden" /></label>{files.length > 0 && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{files.map((item, index) => <div key={`${item.file.name}-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">{item.file.type.startsWith('video/') ? <video src={item.url} muted playsInline className="h-36 w-full object-cover" /> : <img src={item.url} alt={`Aperçu ${index + 1}`} className="h-36 w-full object-cover" />}{index === 0 && <span className="absolute left-2 top-2 rounded-full bg-orange-500 px-2 py-1 text-[10px] font-bold text-black">COUVERTURE</span>}<button type="button" onClick={() => removeFile(index)} aria-label={`Supprimer ${item.file.name}`} className="absolute right-2 top-2 rounded-full bg-black/80 p-2 text-white hover:text-orange-400"><Trash2 size={15} /></button><p className="truncate p-2 text-xs text-zinc-400">{item.file.type.startsWith('video/') ? <Video size={13} className="mr-1 inline" /> : <ImagePlus size={13} className="mr-1 inline" />}{item.file.name}</p></div>)}</div>}</div>
-      <div><h2 className="text-xl font-bold">5. Livraison</h2><div className="mt-4 grid gap-4 sm:grid-cols-3"><Field label="Pays" value={f.pays} onChange={(v) => update('pays', v)} placeholder="Bénin" /><Field label="Ville" value={f.ville} onChange={(v) => update('ville', v)} placeholder="Cotonou" /><Field label="Délai estimé (jours)" type="number" min="0" step="1" value={f.delai} onChange={(v) => update('delai', v)} placeholder="Ex. 3" /></div></div>
-      {testMode && <p className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">Mode test actif : les règles de vérification sont adaptées à la phase de test.</p>}
-      <button type="submit" disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-4 font-black text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"><Send size={19} /> {saving ? 'Publication en cours…' : 'Publier mon annonce'}</button>
-    </section><aside className="h-fit space-y-4 lg:sticky lg:top-6"><div className="rounded-3xl border border-white/10 bg-zinc-950 p-5"><div className="flex items-center gap-2 font-bold"><Info size={18} className="text-orange-500" /> À savoir</div><ul className="mt-4 space-y-3 text-sm text-zinc-400"><li className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-orange-500" />Une promotion devient inactive à sa date de fin ou lorsque le stock est épuisé.</li><li className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-orange-500" />Un article normal reste disponible jusqu’à épuisement du stock ou arrêt par le vendeur.</li><li className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-orange-500" />Des médias nets et représentatifs renforcent la confiance des acheteurs.</li></ul></div><div className="rounded-3xl border border-orange-500/20 bg-orange-500/5 p-5"><p className="text-xs font-bold uppercase tracking-wider text-orange-400">Checklist</p><p className="mt-2 text-sm text-zinc-300">Titre clair · catégorie précise · description complète · prix correct · stock réel · médias · livraison.</p></div></aside></form>
-  </div></main>;
+  return (
+    <main className="min-h-screen bg-black px-4 py-8 text-white sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="font-bold tracking-wide text-orange-500">ESPACE VENDEUR</p><h1 className="mt-1 text-3xl font-black sm:text-4xl">Publier un article</h1><p className="mt-2 max-w-2xl text-zinc-400">Créez une annonce claire, complète et rassurante pour les acheteurs.</p></div>
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950 px-4 py-2 text-sm text-zinc-300"><Package size={17} className="text-orange-500"/>Publication marketplace</div>
+        </header>
+
+        <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <section className="space-y-6 rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-8">
+            {message && <div role="alert" className="flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertCircle size={19} className="mt-0.5 shrink-0"/><span>{message}</span></div>}
+            <PublicationType type={f.type} onChange={(type)=>update('type',type)} />
+            <ProductInfo state={f} update={update} />
+            <PriceInfo state={f} update={update} discount={discount} />
+            <MediaInfo files={files} addFiles={addFiles} removeFile={removeFile} />
+            <DeliveryInfo state={f} update={update} />
+            {testMode && <p className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">Mode test actif : les règles de vérification sont adaptées à la phase de test.</p>}
+            <button type="submit" disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-4 font-black text-black transition hover:bg-orange-400 disabled:opacity-60"><Send size={19}/>{saving?'Publication en cours…':'Publier mon annonce'}</button>
+          </section>
+          <aside className="h-fit space-y-4 lg:sticky lg:top-6">
+            <div className="rounded-3xl border border-white/10 bg-zinc-950 p-5"><div className="flex items-center gap-2 font-bold"><Info size={18} className="text-orange-500"/>À savoir</div><ul className="mt-4 space-y-3 text-sm text-zinc-400"><li className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-orange-500"/>Une promotion devient inactive à sa date de fin ou lorsque le stock est épuisé.</li><li className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-orange-500"/>Un article normal reste disponible jusqu’à épuisement du stock ou arrêt par le vendeur.</li><li className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-orange-500"/>Des médias nets et représentatifs renforcent la confiance des acheteurs.</li></ul></div>
+            <div className="rounded-3xl border border-orange-500/20 bg-orange-500/5 p-5"><p className="text-xs font-bold uppercase tracking-wider text-orange-400">Checklist</p><p className="mt-2 text-sm text-zinc-300">Titre clair · catégorie précise · description complète · prix correct · stock réel · médias · livraison.</p></div>
+          </aside>
+        </form>
+      </div>
+    </main>
+  );
 }
 
-function Field({ label, value, onChange, type = 'text', required = false, placeholder, min, step, maxLength }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; placeholder?: string; min?: string; step?: string; maxLength?: number }) {
-  return <label className="block"><span className="mb-2 block text-sm font-medium text-zinc-400">{label} {required && <b className="text-orange-500">*</b>}</span><input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} placeholder={placeholder} min={min} step={step} maxLength={maxLength} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 outline-none focus:border-orange-500" /></label>;
-}
+function PublicationType({type,onChange}:{type:'article'|'promotion';onChange:(type:'article'|'promotion')=>void}){return <div><h2 className="text-xl font-bold">1. Type de publication</h2><p className="mt-1 text-sm text-zinc-500">Choisissez entre un article permanent et une promotion datée.</p><div className="mt-4 grid grid-cols-2 gap-3">{(['article','promotion'] as const).map((item)=><button key={item} type="button" onClick={()=>onChange(item)} className={`rounded-2xl border p-4 text-left ${type===item?'border-orange-500 bg-orange-500/10':'border-white/10 bg-black'}`}><b className="block">{item==='article'?'Article normal':'Promotion'}</b><span className="mt-1 block text-xs text-zinc-500">{item==='article'?'Visible jusqu’à épuisement ou arrêt.':'Avec prix réduit et dates de validité.'}</span></button>)}</div></div>}
+
+function ProductInfo({state,update}:{state:FormState;update:<K extends keyof FormState>(key:K,value:FormState[K])=>void}){return <div><h2 className="text-xl font-bold">2. Informations du produit</h2><div className="mt-4 space-y-4"><Field label="Titre de l’annonce" value={state.titre} onChange={(v)=>update('titre',v)} placeholder="Ex. Smartphone Samsung Galaxy A55 5G" required maxLength={120}/><label className="block"><span className="mb-2 block text-sm text-zinc-400">Catégorie <b className="text-orange-500">*</b></span><select value={state.categorie} onChange={(e)=>update('categorie',e.target.value)} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3">{CATEGORIES.map((c)=><option key={c} value={c}>{c}</option>)}</select></label><label className="block"><span className="mb-2 block text-sm text-zinc-400">Description <b className="text-orange-500">*</b></span><textarea value={state.description} onChange={(e)=>update('description',e.target.value)} maxLength={3000} className="min-h-36 w-full rounded-xl border border-white/10 bg-black p-4" placeholder="Décrivez l’état, les caractéristiques, les accessoires inclus et les conditions de vente…"/><span className="mt-1 block text-right text-xs text-zinc-600">{state.description.length}/3000</span></label></div></div>}
+
+function PriceInfo({state,update,discount}:{state:FormState;update:<K extends keyof FormState>(key:K,value:FormState[K])=>void;discount:number|null}){return <div><h2 className="text-xl font-bold">3. Prix et disponibilité</h2><div className="mt-4 grid gap-4 sm:grid-cols-2"><Field label={state.type==='promotion'?'Prix original (FCFA)':'Prix (FCFA)'} type="number" min="1" value={state.prix_original} onChange={(v)=>update('prix_original',v)} required/><Field label="Stock disponible" type="number" min="1" step="1" value={state.stock} onChange={(v)=>update('stock',v)} required/>{state.type==='promotion'&&<Field label="Prix promotionnel (FCFA)" type="number" min="1" value={state.prix_promo} onChange={(v)=>update('prix_promo',v)} required/>}</div>{discount!==null&&<p className="mt-3 rounded-xl bg-orange-500/10 p-3 text-sm text-orange-300">Remise affichée : <b>-{discount}%</b></p>}{state.type==='promotion'&&<div className="mt-4 grid gap-4 rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 sm:grid-cols-2"><Field label="Début de la promotion" type="date" value={state.debut} min={today()} onChange={(v)=>update('debut',v)} required/><Field label="Fin de la promotion" type="date" min={state.debut||today()} value={state.fin} onChange={(v)=>update('fin',v)} required/></div>}</div>}
+
+function MediaInfo({files,addFiles,removeFile}:{files:MediaPreview[];addFiles:(files:FileList|null)=>void;removeFile:(index:number)=>void}){return <div><h2 className="text-xl font-bold">4. Photos et vidéos</h2><p className="mt-1 text-sm text-zinc-500">Ajoutez jusqu’à {MAX_FILES} médias. Le premier sera la couverture.</p><label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/20 bg-black p-5 text-center hover:border-orange-500"><ImagePlus size={28} className="text-orange-500"/><b className="mt-2">Ajouter des photos ou vidéos</b><span className="mt-1 text-xs text-zinc-600">JPG, PNG, WEBP, GIF, MP4, WEBM ou MOV · 50 Mo max/fichier</span><input type="file" accept={ACCEPTED} multiple onChange={(e)=>{addFiles(e.target.files);e.currentTarget.value='';}} className="hidden"/></label>{files.length>0&&<div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{files.map((item,index)=><div key={`${item.file.name}-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">{item.file.type.startsWith('video/')?<video src={item.url} muted playsInline className="h-36 w-full object-cover"/>:<img src={item.url} alt={`Aperçu ${index+1}`} className="h-36 w-full object-cover"/>}{index===0&&<span className="absolute left-2 top-2 rounded-full bg-orange-500 px-2 py-1 text-[10px] font-bold text-black">COUVERTURE</span>}<button type="button" onClick={()=>removeFile(index)} aria-label={`Supprimer ${item.file.name}`} className="absolute right-2 top-2 rounded-full bg-black/80 p-2"><Trash2 size={15}/></button><p className="truncate p-2 text-xs text-zinc-400">{item.file.type.startsWith('video/')?<Video size={13} className="mr-1 inline"/>:<ImagePlus size={13} className="mr-1 inline"/>}{item.file.name}</p></div>)}</div>}</div>}
+
+function DeliveryInfo({state,update}:{state:FormState;update:<K extends keyof FormState>(key:K,value:FormState[K])=>void}){return <div><h2 className="text-xl font-bold">5. Livraison</h2><div className="mt-4 grid gap-4 sm:grid-cols-3"><Field label="Pays" value={state.pays} onChange={(v)=>update('pays',v)} placeholder="Bénin"/><Field label="Ville" value={state.ville} onChange={(v)=>update('ville',v)} placeholder="Cotonou"/><Field label="Délai estimé (jours)" type="number" min="0" step="1" value={state.delai} onChange={(v)=>update('delai',v)} placeholder="Ex. 3"/></div></div>}
+
+function Field({label,value,onChange,type='text',required=false,placeholder,min,step,maxLength}:{label:string;value:string;onChange:(value:string)=>void;type?:string;required?:boolean;placeholder?:string;min?:string;step?:string;maxLength?:number}){return <label className="block"><span className="mb-2 block text-sm font-medium text-zinc-400">{label} {required&&<b className="text-orange-500">*</b>}</span><input type={type} value={value} onChange={(e)=>onChange(e.target.value)} required={required} placeholder={placeholder} min={min} step={step} maxLength={maxLength} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 outline-none focus:border-orange-500"/></label>}
