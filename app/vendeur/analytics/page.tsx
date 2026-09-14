@@ -8,9 +8,12 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line
-} from 'recharts';
+import dynamic from 'next/dynamic';
+
+const AnalyticsCharts = dynamic(
+  () => import('@/components/analytics/AnalyticsCharts'),
+  { ssr: false, loading: () => <div className="h-64 flex items-center justify-center border border-white/10 bg-zinc-950 rounded-3xl"><LoadingSpinner /></div> }
+);
 
 type Period = '7d' | '30d' | '3m' | 'all';
 
@@ -55,11 +58,7 @@ export default function AnalyticsPage() {
   const [products, setProducts] = useState<ProductPerformance[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignPerformance[]>([]);
 
-  useEffect(() => {
-    if (!authLoading && user && profile?.role === 'vendeur') {
-      fetchAnalytics();
-    }
-  }, [authLoading, user, period]);
+
 
   const fetchAnalytics = async () => {
     setLoading(true);
@@ -160,6 +159,13 @@ export default function AnalyticsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!authLoading && user && profile?.role === 'vendeur') {
+      fetchAnalytics();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user, period, profile?.role]);
+
   if (authLoading || loading) return <LoadingSpinner />;
   if (!user || profile?.role !== 'vendeur') return <p>Accès vendeur requis.</p>;
 
@@ -203,37 +209,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-3xl border border-white/10 bg-zinc-950 p-6">
-          <h2 className="font-black text-xl mb-6">Évolution des Vues</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="name" stroke="#888" />
-                <YAxis stroke="#888" />
-                <RechartsTooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46' }} />
-                <Line type="monotone" dataKey="vues" stroke="#f97316" strokeWidth={3} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-zinc-950 p-6">
-          <h2 className="font-black text-xl mb-6">Conversions (Ventes)</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="name" stroke="#888" />
-                <YAxis stroke="#888" />
-                <RechartsTooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46' }} />
-                <Bar dataKey="ventes" fill="#10b981" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-      </div>
+      <AnalyticsCharts chartData={chartData} />
 
       {/* Detailed Tables */}
       <div className="grid gap-6 lg:grid-cols-2">
