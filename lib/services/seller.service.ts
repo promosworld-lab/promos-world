@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client';
 import type { Avis, Litige, Promotion, Reservation, Transaction, Wallet, WalletTransaction, PublicationPromotion } from '@/types/database';
 
+export const sellerService = {
   async _getShopId(userId: string) {
     const { data } = await supabase.from('shops').select('id').eq('owner_id', userId).single();
     if (!data) throw new Error('Boutique introuvable.');
@@ -78,3 +79,4 @@ import type { Avis, Litige, Promotion, Reservation, Transaction, Wallet, WalletT
     const { data, error } = await supabase.from('sub_orders').update({ status: 'shipped' }).eq('id', id).select();
     if (error) throw error; return data;
   }
+};
