@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import dynamic from 'next/dynamic';
 
 const AnalyticsCharts = dynamic(
-  () => import('@/components/analytics/AnalyticsCharts'),
+  () => import('../../../components/analytics/analytics-charts'),
   { ssr: false, loading: () => <div className="h-64 flex items-center justify-center border border-white/10 bg-zinc-950 rounded-3xl"><LoadingSpinner /></div> }
 );
 
