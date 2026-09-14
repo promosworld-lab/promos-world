@@ -80,14 +80,40 @@ export default function PublierPage() {
     try {
       const payload:PromotionInput={ titre:f.titre.trim(), description:f.description.trim(), categorie:f.categorie, prix_original:Number(f.prix_original), prix_promo:f.type==='promotion'?Number(f.prix_promo):Number(f.prix_original), stock:Number(f.stock), pays:f.pays.trim()||null, ville:f.ville.trim()||null, delai_livraison_jours:f.delai?Number(f.delai):null, publication_type:f.type, statut:'en_attente', is_active:true, date_debut_promo:f.type==='promotion'?new Date(`${f.debut}T00:00:00`).toISOString():null, date_fin_promo:f.type==='promotion'?new Date(`${f.fin}T23:59:59`).toISOString():null };
       const publication=await promotionsService.create(payload);
+      const imageUrls = [];
+      const shopId = await promotionsService._getShopId(userId);
+      
       for(let i=0;i<files.length;i+=1){
         const file=files[i].file, ext=file.name.split('.').pop()||'bin', path=`${userId}/${publication.id}/${i}-${crypto.randomUUID()}.${ext}`;
         const {error:uploadError}=await supabase.storage.from('publication-media').upload(path,file,{upsert:false,contentType:file.type});
         if(uploadError) throw uploadError;
-        const {error:mediaError}=await supabase.from('promotion_media').insert({promotion_id:publication.id,vendeur_id:userId,storage_path:path,media_type:file.type.startsWith('video/')?'video':'image',position:i});
-        if(mediaError) throw mediaError;
+        
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage.from('publication-media').getPublicUrl(path);
+        imageUrls.push(publicUrl);
+        
+        // Insert into V2 product_media
+        const { error: mediaError } = await supabase.from('product_media').insert({
+          product_id: publication.id,
+          shop_id: shopId,
+          storage_path: path,
+          url: publicUrl,
+          media_type: file.type.startsWith('video/') ? 'video' : 'image',
+          position: i
+        });
+        if (mediaError) throw mediaError;
       }
-      router.push('/dashboard');
+      
+      // Update V2 Product with images array as cache
+      if (imageUrls.length > 0) {
+        const { error: updateError } = await supabase.from('products').update({ 
+          images: imageUrls,
+          thumbnail_url: imageUrls[0]
+        }).eq('id', publication.id);
+        if (updateError) throw updateError;
+      }
+      
+      router.push('/vendeur/dashboard');
     } catch(error){setMessage(error instanceof Error?error.message:'Publication impossible.');}
     finally{setSaving(false);}
   }
